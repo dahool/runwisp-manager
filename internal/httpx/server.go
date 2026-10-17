@@ -16,12 +16,14 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/runwisp/runwisp-manager/internal/api"
 	"github.com/runwisp/runwisp-manager/internal/auth"
+	"github.com/runwisp/runwisp-manager/internal/cfgsave"
 	"github.com/runwisp/runwisp-manager/internal/cfgtree"
 	"github.com/runwisp/runwisp-manager/internal/daemon"
 	"github.com/runwisp/runwisp-manager/internal/proxy"
 	"github.com/runwisp/runwisp-manager/internal/runwispbin"
 	"github.com/runwisp/runwisp-manager/internal/schema"
 	"github.com/runwisp/runwisp-manager/internal/ui"
+	"github.com/runwisp/runwisp-manager/internal/validate"
 )
 
 // NewRouter builds the manager HTTP router. The version and commit values are
@@ -53,10 +55,25 @@ func NewRouterWithAuth(version, commit string, logger *slog.Logger, discovery *d
 			if err == nil {
 				watcher.Start(context.Background())
 				configAPI := &api.ConfigAPI{Watcher: watcher, Auth: authentication}
+				resolver := func(id cfgsave.FileID) (string, error) {
+					for _, file := range watcher.Tree().Files {
+						if file.ID == string(id) || file.Path == string(id) {
+							if file.Outside || !file.Readable {
+								return "", cfgsave.ErrManagedPath
+							}
+							return file.Path, nil
+						}
+					}
+					return "", cfgsave.ErrManagedPath
+				}
+				configAPI.Save = cfgsave.New(cfgsave.Options{Root: watcher.Tree().Root, StateDir: discovery.Config.StateDir, EditEnabled: discovery.Config.EditEnabled, BackupKeep: 20, Resolve: resolver, Daemon: discovery.Client})
 				viewer := authentication.RequireRole("viewer")(configAPI.Routes())
 				r.Mount("/manager/api", viewer)
 				if raw, schemaErr := (runwispbin.Runner{Binary: discovery.Config.RunWispBin}).Schema(context.Background()); schemaErr == nil {
 					if document, loadErr := schema.Load(raw, discovery.Config.StateDir, "", discovery.Capabilities.BinaryVersion); loadErr == nil {
+						configAPI.Save = cfgsave.New(cfgsave.Options{Root: watcher.Tree().Root, StateDir: discovery.Config.StateDir, EditEnabled: discovery.Config.EditEnabled, BackupKeep: 20, Resolve: resolver, Daemon: discovery.Client, Validator: func(ctx context.Context, candidates []validate.Candidate) (validate.Result, error) {
+							return validate.Validate(ctx, validate.Options{Schema: document, Binary: runwispbin.Runner{Binary: discovery.Config.RunWispBin}, Root: watcher.Tree().Root, StateDir: discovery.Config.StateDir, DaemonPID: discovery.Capabilities.DaemonPID}, candidates)
+						}})
 						validationAPI := api.NewValidationAPI(document, watcher, discovery.Config.RunWispBin, discovery.Config.StateDir)
 						validationRoutes := http.StripPrefix("/manager/api", validationAPI.Routes())
 						r.Get("/manager/api/schema", authentication.RequireRole("viewer")(validationRoutes).ServeHTTP)

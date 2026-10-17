@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/runwisp/runwisp-manager/internal/audit"
 	"github.com/runwisp/runwisp-manager/internal/auth"
+	"github.com/runwisp/runwisp-manager/internal/cfgsave"
 	"github.com/runwisp/runwisp-manager/internal/cfgtree"
 )
 
@@ -20,6 +21,7 @@ type ConfigAPI struct {
 	Watcher *cfgtree.Watcher
 	Auth    *auth.Authenticator
 	Audit   audit.Emitter
+	Save    *cfgsave.Pipeline
 	mu      sync.Mutex
 	reveals []time.Time
 }
@@ -32,6 +34,10 @@ func (a *ConfigAPI) Routes() http.Handler {
 	r.Get("/units/{kind}/{name}", a.unit)
 	r.Get("/config/events", a.events)
 	r.Post("/config/secrets:reveal", a.reveal)
+	r.Post("/config/changes:preview", a.changesPreview)
+	r.Post("/config/changes", a.changes)
+	r.Post("/config/reload", a.reload)
+	r.Get("/config/backups", a.backups)
 	return r
 }
 

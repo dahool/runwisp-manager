@@ -22,7 +22,7 @@ starting and completing each task, and must commit the completed phase.
 | 05 | Multi-file config index and read model | Not started | — |
 | 06 | Comment-preserving TOML editing library | Complete | 0bf1830 |
 | 07 | Schema service and validators | Not started | — |
-| 08 | Safe save/apply/rollback/reload pipeline | Not started | — |
+| 08 | Safe save/apply/rollback/reload pipeline | Complete | 6910116 |
 | 09 | Schema-driven task/service editor | Not started | — |
 | 10 | Global settings editors | Not started | — |
 | 11 | Git status, diff, commit, guards | Blocked: document missing | — |
@@ -140,3 +140,15 @@ starting and completing each task, and must commit the completed phase.
 | 2026-10-17 | 07 | Task 6: Endpoints, tests, and documentation | Completed | Added schema/validation/shadow contract tests, documented validation environment settings, and verified endpoint package compilation |
 | 2026-10-17 | 07 | Final verification, diff review, and commit | Started | Running Go 1.27 tests, race/vet/build checks, inspecting the Phase 07 diff, and preparing the phase commit |
 | 2026-10-17 | 07 | Final verification, diff review, and commit | Completed | Go 1.27 tests, focused race tests, vet, CGO-disabled build, and diff checks passed; authoritative live-binary corpus/E2E remains environment-limited because no RunWisp binary or daemon is available, and Go used `/tmp/rwm-go-build` because the default cache is read-only |
+| 2026-10-17 | 08 | Task 1: Change model, locking, ETag/conflict diff | Started | Adding typed change requests, managed-file authorization, in-process/file locking, and optimistic-concurrency conflict responses |
+| 2026-10-17 | 08 | Task 1: Change model, locking, ETag/conflict diff | Completed | Added the Change/FileOps/Raw model, managed-path checks, bounded process/file locking, SHA-256 ETag checks, and deterministic conflict diffs |
+| 2026-10-17 | 08 | Task 2: Compute + validate integration, preview | Started | Applying surgical and raw changes in memory, validating candidates, and producing preview diffs without disk writes |
+| 2026-10-17 | 08 | Task 2: Compute + validate integration, preview | Completed | Added in-memory tomledit application, duplicate-file protection, Phase 07 validator callback integration, deterministic preview diffs, and line statistics |
+| 2026-10-17 | 08 | Task 3: Journal, backup, atomic write, rollback, recovery | Started | Adding crash journals, secure timestamped backups, fsync-and-rename writes, rollback, pruning, and startup recovery |
+| 2026-10-17 | 08 | Task 3: Journal, backup, atomic write, rollback, recovery | Completed | Added 0700 journal/backup storage, mode and owner preservation, fsync-and-rename writes, all-file rollback, backup pruning, and crash recovery for prepared/partial/written journals |
+| 2026-10-17 | 08 | Task 4: Reload integration, response mapping, and SPIKE 8.1 | Started | Wiring daemon reload after atomic save, preserving saved state on unreachable daemons, and rolling back rejected reloads; no dry-run API is assumed |
+| 2026-10-17 | 08 | Task 4: Reload integration, response mapping, and SPIKE 8.1 | Completed | Added save/apply orchestration, daemon reload mapping, rejected-reload rollback, unreachable-daemon warnings with 202 status handled by API, and preview limited to diff plus validation because no dry-run contract is available |
+| 2026-10-17 | 08 | Task 5: Endpoints, idempotency, audit, kill switch | Started | Adding preview/save/reload HTTP endpoints with role gates, idempotency replay, capability checks, and audit-safe responses |
+| 2026-10-17 | 08 | Task 5: Endpoints, idempotency, audit, kill switch | Completed | Added editor/admin-gated preview, save, reload, and backup-list endpoints; header idempotency replay; kill-switch 403 behavior; and actor-aware pipeline wiring |
+| 2026-10-17 | 08 | Task 6: Fault-injection tests and documentation | Started | Adding transactional invariants, conflict/preview, backup/recovery, kill-switch, and idempotency coverage; documenting environment-limited checks |
+| 2026-10-17 | 08 | Task 6: Fault-injection tests and documentation | Completed | Added table-driven save contracts, audit cardinality, idempotency replay, crash recovery, and diff checks; Go tests/race/vet/build passed using `/tmp/rwm-go-build`; live RunWisp reload and filesystem fault-injection E2E remain environment-limited |
