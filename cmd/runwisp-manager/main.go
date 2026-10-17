@@ -11,7 +11,11 @@ import (
 	"log/slog"
 	"os"
 	"runtime"
+	"strings"
+	"time"
 
+	"github.com/runwisp/runwisp-manager/internal/audit"
+	"github.com/runwisp/runwisp-manager/internal/auth"
 	"github.com/runwisp/runwisp-manager/internal/config"
 	"github.com/runwisp/runwisp-manager/internal/daemon"
 	"github.com/runwisp/runwisp-manager/internal/httpx"
@@ -43,6 +47,17 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
+		if problems := c.ValidateAuth(); len(problems) > 0 {
+			return fmt.Errorf("authentication configuration invalid: %s", strings.Join(problems, "; "))
+		}
+		if c.AuthMode == "oidc" {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			_, err := auth.Discover(ctx, c)
+			cancel()
+			if err != nil {
+				return fmt.Errorf("oidc discovery check failed: %w", err)
+			}
+		}
 		data, err := json.MarshalIndent(c.Effective(), "", "  ")
 		if err != nil {
 			return fmt.Errorf("format effective config: %w", err)
@@ -66,6 +81,9 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
+	if problems := c.ValidateAuth(); len(problems) > 0 {
+		return fmt.Errorf("authentication configuration invalid: %s", strings.Join(problems, "; "))
+	}
 	if address == "" {
 		address = c.Listen
 	}
@@ -82,5 +100,21 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	return httpx.ServeWithDiscovery(address, version, commit, logger, discovery, networks)
+	var provider *auth.Provider
+	var store *auth.Store
+	if c.AuthMode == "oidc" {
+		provider, err = auth.Discover(context.Background(), c)
+		if err != nil {
+			return err
+		}
+		store, err = auth.OpenStore(context.Background(), c.StateDir, []byte(c.SessionSecret))
+		if err != nil {
+			return err
+		}
+		defer store.Close()
+		go store.Janitor(context.Background(), 5*time.Minute)
+	}
+	authentication := auth.NewAuthenticator(c, store, provider)
+	authentication.SetAudit(audit.SlogSink{Logger: logger})
+	return httpx.ServeWithAuth(address, version, commit, logger, discovery, networks, authentication)
 }

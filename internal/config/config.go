@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config is the complete Phase 02 environment configuration.
@@ -35,6 +36,31 @@ type Config struct {
 	StrictVersion             bool   `env:"RWM_STRICT_VERSION" doc:"Refuse daemon and binary version mismatch"`
 	InsecureCookies           bool   `env:"RWM_INSECURE_COOKIES" doc:"Allow insecure external cookies"`
 	EditEnabled               bool   `env:"RWM_EDIT_ENABLED" default:"true" doc:"Enable manager editing"`
+	AuthMode                  string `env:"RWM_AUTH_MODE" default:"oidc" doc:"Authentication mode"`
+	OIDCIssuerURL             string `env:"RWM_OIDC_ISSUER_URL" doc:"OIDC issuer URL"`
+	OIDCClientID              string `env:"RWM_OIDC_CLIENT_ID" doc:"OIDC client ID"`
+	OIDCClientSecret          string `env:"RWM_OIDC_CLIENT_SECRET" secret:"true" doc:"OIDC client secret"`
+	OIDCScopes                string `env:"RWM_OIDC_SCOPES" default:"openid profile email" doc:"OIDC scopes"`
+	OIDCClaimUsername         string `env:"RWM_OIDC_CLAIM_USERNAME" default:"preferred_username" doc:"OIDC username claim"`
+	OIDCClaimName             string `env:"RWM_OIDC_CLAIM_NAME" default:"name" doc:"OIDC name claim"`
+	OIDCClaimEmail            string `env:"RWM_OIDC_CLAIM_EMAIL" default:"email" doc:"OIDC email claim"`
+	OIDCClaimGroups           string `env:"RWM_OIDC_CLAIM_GROUPS" default:"groups" doc:"OIDC groups claim"`
+	OIDCRoleAdminGroups       string `env:"RWM_OIDC_ROLE_ADMIN_GROUPS" doc:"OIDC admin groups"`
+	OIDCRoleEditorGroups      string `env:"RWM_OIDC_ROLE_EDITOR_GROUPS" doc:"OIDC editor groups"`
+	OIDCRoleOperatorGroups    string `env:"RWM_OIDC_ROLE_OPERATOR_GROUPS" doc:"OIDC operator groups"`
+	OIDCRoleViewerGroups      string `env:"RWM_OIDC_ROLE_VIEWER_GROUPS" doc:"OIDC viewer groups"`
+	OIDCDefaultRole           string `env:"RWM_OIDC_DEFAULT_ROLE" doc:"Default OIDC role"`
+	OIDCAllowedDomains        string `env:"RWM_OIDC_ALLOWED_DOMAINS" doc:"Allowed email domains"`
+	OIDCAllowedEmails         string `env:"RWM_OIDC_ALLOWED_EMAILS" doc:"Allowed email addresses"`
+	OIDCRequireEmailVerified  bool   `env:"RWM_OIDC_REQUIRE_EMAIL_VERIFIED" default:"true" doc:"Require verified email"`
+	OIDCUserinfoClaims        bool   `env:"RWM_OIDC_USERINFO_CLAIMS" doc:"Merge OIDC userinfo claims"`
+	OIDCExtraAuthParams       string `env:"RWM_OIDC_EXTRA_AUTH_PARAMS" doc:"Extra OIDC authorization parameters"`
+	OIDCCAFile                string `env:"RWM_OIDC_CA_FILE" doc:"OIDC CA file"`
+	OIDCInsecureSkipTLSVerify bool   `env:"RWM_OIDC_INSECURE_SKIP_TLS_VERIFY" doc:"Skip OIDC TLS verification"`
+	SessionTTL                string `env:"RWM_SESSION_TTL" default:"12h" doc:"Absolute session lifetime"`
+	SessionIdle               string `env:"RWM_SESSION_IDLE" default:"1h" doc:"Idle session lifetime"`
+	SessionSecret             string `env:"RWM_SESSION_SECRET" secret:"true" doc:"Session HMAC secret"`
+	Landing                   string `env:"RWM_LANDING" default:"/" doc:"Post-login landing path"`
 }
 
 // Load reads the process environment, applying defaults and secret _FILE values.
@@ -108,6 +134,18 @@ func (c Config) validate() []string {
 			problems = append(problems, "RWM_EXTERNAL_URL must be an absolute https:// URL unless loopback or RWM_INSECURE_COOKIES=true")
 		}
 	}
+	if c.AuthMode != "oidc" && c.AuthMode != "disabled" {
+		problems = append(problems, "RWM_AUTH_MODE must be oidc or disabled")
+	}
+	if c.InsecureCookies && c.ExternalURL != "" && strings.HasPrefix(strings.ToLower(c.ExternalURL), "https://") {
+		problems = append(problems, "RWM_INSECURE_COOKIES cannot be used with an https RWM_EXTERNAL_URL")
+	}
+	if c.AuthMode == "disabled" && c.Listen != "" && !isLoopbackListen(c.Listen) {
+		problems = append(problems, "RWM_AUTH_MODE=disabled requires a loopback RWM_LISTEN")
+	}
+	if c.AuthMode == "oidc" && (c.OIDCIssuerURL != "" || c.OIDCClientID != "" || c.OIDCClientSecret != "" || c.SessionSecret != "") {
+		problems = append(problems, c.validateOIDC(false)...)
+	}
 	for _, value := range splitCSV(c.TrustedProxies) {
 		_, network, err := net.ParseCIDR(value)
 		if err != nil {
@@ -117,6 +155,67 @@ func (c Config) validate() []string {
 		}
 	}
 	return problems
+}
+
+// ValidateAuth returns strict authentication configuration errors. Load keeps
+// the no-environment baseline usable for existing local commands; serve and
+// check-config call this method before starting an authenticated service.
+func (c Config) ValidateAuth() []string { return c.validateOIDC(true) }
+
+func (c Config) validateOIDC(strict bool) []string {
+	var problems []string
+	if c.AuthMode == "disabled" {
+		if !isLoopbackListen(c.Listen) {
+			problems = append(problems, "RWM_AUTH_MODE=disabled requires a loopback RWM_LISTEN")
+		}
+		return problems
+	}
+	if strict || c.OIDCIssuerURL != "" || c.OIDCClientID != "" || c.OIDCClientSecret != "" || c.SessionSecret != "" {
+		if c.ExternalURL == "" {
+			problems = append(problems, "RWM_EXTERNAL_URL is required in oidc mode")
+		}
+		if c.OIDCIssuerURL == "" {
+			problems = append(problems, "RWM_OIDC_ISSUER_URL is required in oidc mode")
+		}
+		if c.OIDCClientID == "" {
+			problems = append(problems, "RWM_OIDC_CLIENT_ID is required in oidc mode")
+		}
+		if c.OIDCClientSecret == "" {
+			problems = append(problems, "RWM_OIDC_CLIENT_SECRET or _FILE is required in oidc mode")
+		}
+		if len([]byte(c.SessionSecret)) < 32 {
+			problems = append(problems, "RWM_SESSION_SECRET must contain at least 32 bytes")
+		}
+		if c.OIDCDefaultRole != "" && !validRole(c.OIDCDefaultRole) {
+			problems = append(problems, "RWM_OIDC_DEFAULT_ROLE must be viewer, operator, editor, or admin")
+		}
+		if c.OIDCRoleAdminGroups == "" && c.OIDCRoleEditorGroups == "" && c.OIDCRoleOperatorGroups == "" && c.OIDCRoleViewerGroups == "" && c.OIDCDefaultRole == "" {
+			problems = append(problems, "OIDC role mapping requires at least one role group or RWM_OIDC_DEFAULT_ROLE")
+		}
+		if _, err := time.ParseDuration(c.SessionTTL); err != nil {
+			problems = append(problems, "RWM_SESSION_TTL must be a duration")
+		}
+		if _, err := time.ParseDuration(c.SessionIdle); err != nil {
+			problems = append(problems, "RWM_SESSION_IDLE must be a duration")
+		}
+	}
+	return problems
+}
+
+func validRole(role string) bool {
+	return role == "viewer" || role == "operator" || role == "editor" || role == "admin"
+}
+
+func isLoopbackListen(address string) bool {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func setValue(dst reflect.Value, value string) error {

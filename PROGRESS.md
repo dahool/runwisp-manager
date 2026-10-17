@@ -17,7 +17,7 @@ starting and completing each task, and must commit the completed phase.
 | --- | --- | --- | --- |
 | 01 | Go binary serving RunWisp-identical empty shell | Not started | — |
 | 02 | Env config, daemon client, discovery, version check | Complete | 96beec4aad9e6250cd830b19df7f607c2cbfdfab |
-| 03 | OIDC login, sessions, roles, CSRF | Not started | — |
+| 03 | OIDC login, sessions, roles, CSRF | Complete | aa9a768 |
 | 04 | Authenticated reverse proxy and bridge | Not started | — |
 | 05 | Multi-file config index and read model | Not started | — |
 | 06 | Comment-preserving TOML editing library | Blocked: document missing | — |
@@ -62,3 +62,19 @@ starting and completing each task, and must commit the completed phase.
 | 2026-10-17 | 02 | UI daemon status banner | Completed | Added a resilient status fetch and visible connected/unreachable daemon indicator to the manager shell |
 | 2026-10-17 | 02 | Phase 02 verification and review | Started | Running formatting, generation, Go 1.27 tests/vet, UI checks, and inspecting the final diff |
 | 2026-10-17 | 02 | Phase 02 verification and review | Completed | Go 1.27 race tests, vet, generated environment docs, check-config smoke tests, Svelte check, and git diff check passed; Svelte retained one pre-existing unused CSS warning |
+| 2026-10-17 | 03 | Config structs + validation + check-config OIDC checks | Started | Adding OIDC, session, role, gate, and disabled-mode configuration with static validation and discovery checks |
+| 2026-10-17 | 03 | Config structs + validation + check-config OIDC checks | Completed | Added typed OIDC/session/role/gate settings, strict auth validation for serve/check-config, disabled-mode loopback enforcement, and secret redaction compatibility |
+| 2026-10-17 | 03 | SQLite store (sessions, flows, janitor) | Started | Implementing WAL-backed auth state with HMAC session IDs, encrypted ID-token hints, single-use flows, expiry, and cleanup |
+| 2026-10-17 | 03 | SQLite store (sessions, flows, janitor) | Completed | Added modernc SQLite schema/store, atomic flow consumption, absolute and idle session expiry, encrypted hints, hashed IDs, and cancellable janitor |
+| 2026-10-17 | 03 | OIDC client wrapper | Started | Adding discovery, PKCE authorization, JWKS signature and claim verification, userinfo merging, custom CA, and provider logout metadata |
+| 2026-10-17 | 03 | OIDC client wrapper | Completed | Added discovery metadata validation, PKCE authorization, JWT issuer/audience/expiry/nonce/signature checks, optional userinfo merge, JWKS caching, custom CA, and logout metadata |
+| 2026-10-17 | 03 | Claim/role mapping + gates | Started | Normalizing provider claim shapes, applying email/domain gates, and resolving the highest configured role |
+| 2026-10-17 | 03 | Claim/role mapping + gates | Completed | Added groups normalization for provider shapes, verified-email/domain/email gates, highest-role resolution, and deny-by-default behavior |
+| 2026-10-17 | 03 | Handlers (login/callback/logout/me) + return_to validation | Started | Adding browser auth endpoints, opaque cookie sessions, safe redirects, logout provider redirects, and `/api/me` |
+| 2026-10-17 | 03 | Handlers (login/callback/logout/me) + return_to validation | Completed | Added login/callback/logout/me handlers, single-use flow cookie binding, safe relative redirects, session cookie lifecycle, and HTML versus JSON errors |
+| 2026-10-17 | 03 | Middleware: auth, RequireRole, CSRF, login/callback rate limit | Started | Wiring session authentication and role gates into the manager router with origin/content-type CSRF checks and bounded auth attempts |
+| 2026-10-17 | 03 | Middleware: auth, RequireRole, CSRF, login/callback rate limit | Completed | Protected `/manager/api/status` and `/manager/api/me`, added role middleware, cookie-session auth, CSRF origin/referer checks, and 20-per-minute login/callback limiting |
+| 2026-10-17 | 03 | Audit interface + slog sink | Started | Adding the audit event interface and emitting authentication lifecycle events without secrets or session identifiers |
+| 2026-10-17 | 03 | Audit interface + slog sink | Completed | Added `audit.Event`, `audit.Emitter`, and structured slog sink; authentication emits login, logout, and denial events without credentials or session IDs |
+| 2026-10-17 | 03 | Tests + fake IdP + docs | Started | Adding role/claim, redirect, CSRF, session expiry, and JWT integration coverage plus generated environment documentation |
+| 2026-10-17 | 03 | Tests + fake IdP + docs | Completed | Added unit and fake-IdP JWT coverage, generated environment docs, Pocket ID deployment notes, and verified Go 1.27 tests/race/vet, config smoke checks, and diff; fake-IdP listener skipped by sandbox, live Pocket ID unavailable, govulncheck/gosec unavailable |

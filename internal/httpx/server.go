@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/runwisp/runwisp-manager/internal/auth"
 	"github.com/runwisp/runwisp-manager/internal/daemon"
 	"github.com/runwisp/runwisp-manager/internal/ui"
 )
@@ -24,14 +25,25 @@ func NewRouter(version, commit string, logger *slog.Logger) http.Handler {
 }
 
 func NewRouterWithDiscovery(version, commit string, logger *slog.Logger, discovery *daemon.Discovery, networks []*net.IPNet) http.Handler {
+	return NewRouterWithAuth(version, commit, logger, discovery, networks, nil)
+}
+
+func NewRouterWithAuth(version, commit string, logger *slog.Logger, discovery *daemon.Discovery, networks []*net.IPNet, authentication *auth.Authenticator) http.Handler {
 	r := chi.NewRouter()
 	r.Use(RequestID, SecurityHeaders, Recoverer, AccessLog(logger))
 	if networks != nil {
 		r.Use(RealIP(networks))
 	}
 	r.Get("/manager/healthz", health(version, commit))
-	r.Get("/manager/api/status", statusHandler(discovery))
+	status := http.Handler(http.HandlerFunc(statusHandler(discovery)))
+	if authentication != nil {
+		status = authentication.RequireRole("viewer")(status)
+	}
+	r.Method(http.MethodGet, "/manager/api/status", status)
 	r.Get("/manager/readyz", readyHandler(discovery))
+	if authentication != nil {
+		r.Mount("/manager", authentication.Routes())
+	}
 	r.Mount("/manager", http.StripPrefix("/manager", ui.Handler()))
 	return r
 }
@@ -45,6 +57,11 @@ func Serve(address, version, commit string, logger *slog.Logger) error {
 func ServeWithDiscovery(address, version, commit string, logger *slog.Logger, discovery *daemon.Discovery, networks []*net.IPNet) error {
 	logger.Info("starting manager", "address", address, "version", version, "commit", commit)
 	return http.ListenAndServe(address, NewRouterWithDiscovery(version, commit, logger, discovery, networks))
+}
+
+func ServeWithAuth(address, version, commit string, logger *slog.Logger, discovery *daemon.Discovery, networks []*net.IPNet, authentication *auth.Authenticator) error {
+	logger.Info("starting manager", "address", address, "version", version, "commit", commit)
+	return http.ListenAndServe(address, NewRouterWithAuth(version, commit, logger, discovery, networks, authentication))
 }
 
 func health(version, commit string) http.HandlerFunc {

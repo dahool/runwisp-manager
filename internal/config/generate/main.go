@@ -27,6 +27,31 @@ type config struct {
 	StrictVersion             bool   `env:"RWM_STRICT_VERSION" doc:"Refuse daemon and binary version mismatch"`
 	InsecureCookies           bool   `env:"RWM_INSECURE_COOKIES" doc:"Allow insecure external cookies"`
 	EditEnabled               bool   `env:"RWM_EDIT_ENABLED" default:"true" doc:"Enable manager editing"`
+	AuthMode                  string `env:"RWM_AUTH_MODE" default:"oidc" doc:"Authentication mode"`
+	OIDCIssuerURL             string `env:"RWM_OIDC_ISSUER_URL" doc:"OIDC issuer URL"`
+	OIDCClientID              string `env:"RWM_OIDC_CLIENT_ID" doc:"OIDC client ID"`
+	OIDCClientSecret          string `env:"RWM_OIDC_CLIENT_SECRET" secret:"true" doc:"OIDC client secret"`
+	OIDCScopes                string `env:"RWM_OIDC_SCOPES" default:"openid profile email" doc:"OIDC scopes"`
+	OIDCClaimUsername         string `env:"RWM_OIDC_CLAIM_USERNAME" default:"preferred_username" doc:"OIDC username claim"`
+	OIDCClaimName             string `env:"RWM_OIDC_CLAIM_NAME" default:"name" doc:"OIDC name claim"`
+	OIDCClaimEmail            string `env:"RWM_OIDC_CLAIM_EMAIL" default:"email" doc:"OIDC email claim"`
+	OIDCClaimGroups           string `env:"RWM_OIDC_CLAIM_GROUPS" default:"groups" doc:"OIDC groups claim"`
+	OIDCRoleAdminGroups       string `env:"RWM_OIDC_ROLE_ADMIN_GROUPS" doc:"OIDC admin groups"`
+	OIDCRoleEditorGroups      string `env:"RWM_OIDC_ROLE_EDITOR_GROUPS" doc:"OIDC editor groups"`
+	OIDCRoleOperatorGroups    string `env:"RWM_OIDC_ROLE_OPERATOR_GROUPS" doc:"OIDC operator groups"`
+	OIDCRoleViewerGroups      string `env:"RWM_OIDC_ROLE_VIEWER_GROUPS" doc:"OIDC viewer groups"`
+	OIDCDefaultRole           string `env:"RWM_OIDC_DEFAULT_ROLE" doc:"Default OIDC role"`
+	OIDCAllowedDomains        string `env:"RWM_OIDC_ALLOWED_DOMAINS" doc:"Allowed email domains"`
+	OIDCAllowedEmails         string `env:"RWM_OIDC_ALLOWED_EMAILS" doc:"Allowed email addresses"`
+	OIDCRequireEmailVerified  bool   `env:"RWM_OIDC_REQUIRE_EMAIL_VERIFIED" default:"true" doc:"Require verified email"`
+	OIDCUserinfoClaims        bool   `env:"RWM_OIDC_USERINFO_CLAIMS" doc:"Merge OIDC userinfo claims"`
+	OIDCExtraAuthParams       string `env:"RWM_OIDC_EXTRA_AUTH_PARAMS" doc:"Extra OIDC authorization parameters"`
+	OIDCCAFile                string `env:"RWM_OIDC_CA_FILE" doc:"OIDC CA file"`
+	OIDCInsecureSkipTLSVerify bool   `env:"RWM_OIDC_INSECURE_SKIP_TLS_VERIFY" doc:"Skip OIDC TLS verification"`
+	SessionTTL                string `env:"RWM_SESSION_TTL" default:"12h" doc:"Absolute session lifetime"`
+	SessionIdle               string `env:"RWM_SESSION_IDLE" default:"1h" doc:"Idle session lifetime"`
+	SessionSecret             string `env:"RWM_SESSION_SECRET" secret:"true" doc:"Session HMAC secret"`
+	Landing                   string `env:"RWM_LANDING" default:"/" doc:"Post-login landing path"`
 }
 
 func main() {
