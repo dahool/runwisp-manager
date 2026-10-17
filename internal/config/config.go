@@ -60,7 +60,11 @@ type Config struct {
 	SessionTTL                string `env:"RWM_SESSION_TTL" default:"12h" doc:"Absolute session lifetime"`
 	SessionIdle               string `env:"RWM_SESSION_IDLE" default:"1h" doc:"Idle session lifetime"`
 	SessionSecret             string `env:"RWM_SESSION_SECRET" secret:"true" doc:"Session HMAC secret"`
-	Landing                   string `env:"RWM_LANDING" default:"/" doc:"Post-login landing path"`
+	Landing                   string `env:"RWM_LANDING" default:"runwisp" doc:"Landing target (runwisp or manager)"`
+	ProxyPublicPaths          string `env:"RWM_PROXY_PUBLIC_PATHS" default:"/health,/api/hooks/" doc:"Unauthenticated proxy paths"`
+	ProxyExposeMetrics        bool   `env:"RWM_PROXY_EXPOSE_METRICS" doc:"Expose the daemon metrics endpoint"`
+	Bridge                    bool   `env:"RWM_BRIDGE" default:"true" doc:"Inject the manager bridge into RunWisp HTML"`
+	BridgePosition            string `env:"RWM_BRIDGE_POSITION" default:"bottom-right" doc:"Bridge pill position"`
 }
 
 // Load reads the process environment, applying defaults and secret _FILE values.
@@ -153,6 +157,17 @@ func (c Config) validate() []string {
 		} else if network.String() == "0.0.0.0/0" || network.String() == "::/0" {
 			problems = append(problems, fmt.Sprintf("RWM_TRUSTED_PROXIES: %q is not allowed", value))
 		}
+	}
+	if c.Landing != "/" && c.Landing != "runwisp" && c.Landing != "manager" {
+		problems = append(problems, "RWM_LANDING must be runwisp or manager")
+	}
+	for _, value := range splitCSV(c.ProxyPublicPaths) {
+		if strings.HasPrefix(value, "/manager") || strings.HasPrefix(value, "/api/local") || (!strings.HasPrefix(value, "/") && value != "") {
+			problems = append(problems, fmt.Sprintf("RWM_PROXY_PUBLIC_PATHS contains forbidden path %q", value))
+		}
+	}
+	if c.BridgePosition != "bottom-right" && c.BridgePosition != "bottom-left" && c.BridgePosition != "top-right" && c.BridgePosition != "top-left" {
+		problems = append(problems, "RWM_BRIDGE_POSITION must be bottom-right, bottom-left, top-right, or top-left")
 	}
 	return problems
 }

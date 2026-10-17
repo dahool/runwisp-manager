@@ -18,7 +18,7 @@ starting and completing each task, and must commit the completed phase.
 | 01 | Go binary serving RunWisp-identical empty shell | Not started | — |
 | 02 | Env config, daemon client, discovery, version check | Complete | 96beec4aad9e6250cd830b19df7f607c2cbfdfab |
 | 03 | OIDC login, sessions, roles, CSRF | Complete | 25f2930 |
-| 04 | Authenticated reverse proxy and bridge | Not started | — |
+| 04 | Authenticated reverse proxy and bridge | Complete | committed; final hash reported in handoff |
 | 05 | Multi-file config index and read model | Not started | — |
 | 06 | Comment-preserving TOML editing library | Blocked: document missing | — |
 | 07 | Schema service and validators | Not started | — |
@@ -78,3 +78,21 @@ starting and completing each task, and must commit the completed phase.
 | 2026-10-17 | 03 | Audit interface + slog sink | Completed | Added `audit.Event`, `audit.Emitter`, and structured slog sink; authentication emits login, logout, and denial events without credentials or session IDs |
 | 2026-10-17 | 03 | Tests + fake IdP + docs | Started | Adding role/claim, redirect, CSRF, session expiry, and JWT integration coverage plus generated environment documentation |
 | 2026-10-17 | 03 | Tests + fake IdP + docs | Completed | Added unit and fake-IdP JWT coverage, generated environment docs, Pocket ID deployment notes, and verified Go 1.27 tests/race/vet, config smoke checks, and diff; fake-IdP listener skipped by sandbox, live Pocket ID unavailable, govulncheck/gosec unavailable |
+| 2026-10-17 | 04 | Spikes 4.1, 4.2; classification contract | Started | Adding proxy configuration and the checked-in deny-by-default operation classification; live RunWisp OpenAPI is unavailable locally |
+| 2026-10-17 | 04 | Spikes 4.1, 4.2; classification contract | Completed | Added landing/public-path/bridge configuration and `internal/proxy/classification.json`; recorded the unavailable `runwisp openapi` spike and classified known 1.7 operation families |
+| 2026-10-17 | 04 | Reverse proxy core | Started | Reusing the daemon transport with credential stripping, trusted forwarding headers, body limits, HTML/SSE-aware proxy behavior, and upstream cookie removal |
+| 2026-10-17 | 04 | Reverse proxy core | Completed | Added `internal/proxy` transport reuse, request sanitization, bounded bodies, upstream cookie removal, response header defaults, and bad-gateway handling |
+| 2026-10-17 | 04 | Classification + RBAC middleware | Started | Connecting proxy classification to Phase 03 sessions and role checks, with safe HTML/API denial responses and landing selection |
+| 2026-10-17 | 04 | Classification + RBAC middleware | Completed | Wired the authenticated root proxy, deny-by-default path classifier, viewer/operator/editor gates, public paths, manager landing redirect, and denial logging |
+| 2026-10-17 | 04 | Status synthesis | Started | Adding the role-aware auth status response and sensitive-field stripping contract |
+| 2026-10-17 | 04 | Status synthesis | Completed | Synthesized daemon auth status with authenticated/read-only role semantics, OIDC display name, and credential-field removal |
+| 2026-10-17 | 04 | HTML injection + header handling | Started | Adding decompression-safe bridge injection, cache/content-length fixes, and origin-header preservation rules |
+| 2026-10-17 | 04 | HTML injection + header handling | Completed | Added HTML injection at `</head>`/`</body>` fallback, gzip decoding, bounded pages, no-store behavior, and missing-only security headers |
+| 2026-10-17 | 04 | SSE hardening + session-expiry closer | Started | Adding unbuffered streaming behavior and cancellation when the authenticated session expires or is revoked |
+| 2026-10-17 | 04 | SSE hardening + session-expiry closer | Completed | Added no-buffer SSE response handling, compression suppression, and periodic session validity cancellation for long-lived streams |
+| 2026-10-17 | 04 | Bridge | Started | Adding the dependency-free Shadow DOM bridge endpoint, role-aware task edit link, route awareness, and sign-out behavior |
+| 2026-10-17 | 04 | Bridge | Completed | Added `/manager/bridge.js` with Shadow DOM pill, manager/edit/sign-out links, route hooks, 401 login redirect, position config, and disable toggle |
+| 2026-10-17 | 04 | Tests + docs | Started | Adding proxy/bridge contract tests, refreshing environment documentation, and preparing full Go/UI verification |
+| 2026-10-17 | 04 | Tests + docs | Completed | Added proxy classification, header, gzip injection, and bridge tests; full Go tests, race tests, and vet passed; UI checks/live daemon e2e remain environment-limited |
+| 2026-10-17 | 04 | Final verification | Started | Running the final Go 1.27/race/vet/build/UI checks and reviewing the phase diff before commit |
+| 2026-10-17 | 04 | Final verification | Completed | Go 1.27 tests, race tests, vet, CGO-disabled build, Svelte check, and diff check passed; Svelte retained one pre-existing unused `.theme` CSS warning; live `runwisp openapi`, daemon E2E, and govulncheck/gosec are unavailable or sandbox-limited |

@@ -66,12 +66,18 @@ func (a *Authenticator) RequireRole(minimum string) func(http.Handler) http.Hand
 	}
 }
 
+// IdentityFromRequest returns the authenticated browser identity, if any.
+// It is intentionally read-only so downstream handlers cannot forge roles.
+func (a *Authenticator) IdentityFromRequest(r *http.Request) (Identity, bool) {
+	return a.identity(r)
+}
+
 func (a *Authenticator) login(w http.ResponseWriter, r *http.Request) {
 	if !a.allow(r.RemoteAddr) {
 		browserError(w, http.StatusTooManyRequests, "too many login attempts")
 		return
 	}
-	returnTo, err := validateReturnTo(r.URL.Query().Get("return_to"), a.Config.Landing)
+	returnTo, err := validateReturnTo(r.URL.Query().Get("return_to"), landingPath(a.Config.Landing))
 	if err != nil {
 		browserError(w, http.StatusBadRequest, err.Error())
 		return
@@ -266,6 +272,16 @@ func validateReturnTo(value, fallback string) (string, error) {
 		return "", errors.New("return_to must be a relative path")
 	}
 	return value, nil
+}
+func landingPath(value string) string {
+	switch value {
+	case "manager":
+		return "/manager/"
+	case "runwisp", "":
+		return "/"
+	default:
+		return value
+	}
 }
 func randomString(size int) (string, error) {
 	data := make([]byte, size)

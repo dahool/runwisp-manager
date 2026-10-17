@@ -1,0 +1,15 @@
+{
+  "source": "RunWisp 1.7 OpenAPI operation families; live runwisp openapi unavailable in this build environment",
+  "operations": [
+    {"method":"POST","path":"/api/tasks/{name}/run","class":"operate"},
+    {"method":"POST","path":"/api/tasks/{name}/start","class":"operate"},
+    {"method":"POST","path":"/api/tasks/{name}/stop","class":"operate"},
+    {"method":"POST","path":"/api/tasks/{name}/restart","class":"operate"},
+    {"method":"POST","path":"/api/tasks/{name}/pause","class":"operate"},
+    {"method":"POST","path":"/api/tasks/{name}/resume","class":"operate"},
+    {"method":"DELETE","path":"/api/runs/{id}","class":"operate"},
+    {"method":"POST","path":"/api/notifications/read","class":"operate"},
+    {"method":"POST","path":"/api/daemon/reload","class":"apply"}
+  ],
+  "deny": ["/api/local/", "/api/daemon/identity", "/api/auth/", "/metrics"]
+}

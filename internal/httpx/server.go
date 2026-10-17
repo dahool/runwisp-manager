@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/runwisp/runwisp-manager/internal/auth"
 	"github.com/runwisp/runwisp-manager/internal/daemon"
+	"github.com/runwisp/runwisp-manager/internal/proxy"
 	"github.com/runwisp/runwisp-manager/internal/ui"
 )
 
@@ -43,8 +44,17 @@ func NewRouterWithAuth(version, commit string, logger *slog.Logger, discovery *d
 	r.Get("/manager/readyz", readyHandler(discovery))
 	if authentication != nil {
 		r.Mount("/manager", authentication.Routes())
+		if discovery != nil {
+			r.Get("/manager/bridge.js", ui.BridgeHandler(discovery.Config))
+		}
 	}
 	r.Mount("/manager", http.StripPrefix("/manager", ui.Handler()))
+	if authentication != nil && discovery != nil {
+		if discovery.Config.Landing == "manager" {
+			r.Get("/", func(w http.ResponseWriter, req *http.Request) { http.Redirect(w, req, "/manager/", http.StatusFound) })
+		}
+		r.Handle("/*", proxy.New(discovery.Client, authentication, discovery.Config, logger))
+	}
 	return r
 }
 

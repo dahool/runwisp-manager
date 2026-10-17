@@ -51,7 +51,11 @@ type config struct {
 	SessionTTL                string `env:"RWM_SESSION_TTL" default:"12h" doc:"Absolute session lifetime"`
 	SessionIdle               string `env:"RWM_SESSION_IDLE" default:"1h" doc:"Idle session lifetime"`
 	SessionSecret             string `env:"RWM_SESSION_SECRET" secret:"true" doc:"Session HMAC secret"`
-	Landing                   string `env:"RWM_LANDING" default:"/" doc:"Post-login landing path"`
+	Landing                   string `env:"RWM_LANDING" default:"runwisp" doc:"Landing target (runwisp or manager)"`
+	ProxyPublicPaths          string `env:"RWM_PROXY_PUBLIC_PATHS" default:"/health,/api/hooks/" doc:"Unauthenticated proxy paths"`
+	ProxyExposeMetrics        bool   `env:"RWM_PROXY_EXPOSE_METRICS" doc:"Expose the daemon metrics endpoint"`
+	Bridge                    bool   `env:"RWM_BRIDGE" default:"true" doc:"Inject the manager bridge into RunWisp HTML"`
+	BridgePosition            string `env:"RWM_BRIDGE_POSITION" default:"bottom-right" doc:"Bridge pill position"`
 }
 
 func main() {
