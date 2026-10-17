@@ -20,7 +20,7 @@ starting and completing each task, and must commit the completed phase.
 | 03 | OIDC login, sessions, roles, CSRF | Complete | 25f2930 |
 | 04 | Authenticated reverse proxy and bridge | Complete | committed; final hash reported in handoff |
 | 05 | Multi-file config index and read model | Not started | — |
-| 06 | Comment-preserving TOML editing library | Blocked: document missing | — |
+| 06 | Comment-preserving TOML editing library | Complete | 0bf1830 |
 | 07 | Schema service and validators | Not started | — |
 | 08 | Safe save/apply/rollback/reload pipeline | Not started | — |
 | 09 | Schema-driven task/service editor | Not started | — |
@@ -110,3 +110,19 @@ starting and completing each task, and must commit the completed phase.
 | 2026-10-17 | 05 | Read-only UI pages | Completed | Added overview counts/stale and warning states, task/service list/detail views, settings file graph, service alias navigation, read-only fields, and rebuilt embedded UI assets; Svelte check/build pass with one pre-existing `.theme` warning |
 | 2026-10-17 | 05 | Final verification and phase review | Started | Running full Go tests, race/vet/build checks, web verification, secret-exposure review, and final diff inspection |
 | 2026-10-17 | 05 | Final verification and phase review | Completed | Go 1.27 full tests, new-package race tests, vet, CGO-disabled build, Svelte check, and production web build passed; source diff check passed, while generated minified UI output retains one internal trailing-space warning; live daemon/UI E2E, govulncheck, and gosec remain unavailable or sandbox-limited; inherited `.theme` Svelte warning remains |
+| 2026-10-17 | 06 | Spike: parser, SetValue, AddKey, DeleteKey, safety checks | Started | Establishing the unstable parser wrapper and proving surgical edits against representative TOML layouts |
+| 2026-10-17 | 06 | Spike: parser, SetValue, AddKey, DeleteKey, safety checks | Completed | Parser wrapper and surgical key edits pass representative comments, tables, CRLF, BOM, idempotence, parse, semantic, and locality checks; go decision is proceed |
+| 2026-10-17 | 06 | Node index, headers, ownership spans | Started | Extending the source index for table headers, dotted/quoted paths, and comment ownership |
+| 2026-10-17 | 06 | Node index, headers, ownership spans | Completed | Added flat key/table/comment index with canonical paths, derived header ranges, owned comment spans, duplicate-table rejection, and defensive accessors |
+| 2026-10-17 | 06 | Operations: add/delete/rename/reorder and positioning | Started | Implementing table and array-table structural edits with original-offset splicing |
+| 2026-10-17 | 06 | Operations: add/delete/rename/reorder and positioning | Completed | Added key/table/array-table add, delete, rename, reorder, before/after placement, overlap rejection, and structural semantic tests |
+| 2026-10-17 | 06 | Value formatter and style preservation | Started | Preserving literal string style, line endings, indentation, and compact versus multiline values |
+| 2026-10-17 | 06 | Value formatter and style preservation | Completed | Added native scalar/array/table formatting, literal and multiline string retention, CRLF-aware insertion, indentation copying, BOM retention, and idempotence coverage |
+| 2026-10-17 | 06 | Safety net and reference operation semantics | Started | Enforcing output parseability, reference-map equality, and byte locality for every Apply call |
+| 2026-10-17 | 06 | Safety net and reference operation semantics | Completed | Apply now reparses output, compares a reference semantic map, rejects mismatches, and verifies every untouched source interval byte-for-byte |
+| 2026-10-17 | 06 | Property and fuzz tests | Started | Adding parser/apply fuzz targets and generated valid-edit properties for panic and round-trip coverage |
+| 2026-10-17 | 06 | Property and fuzz tests | Completed | Added parser and Apply fuzz targets; parser fuzzing completed 271k executions in 2 seconds without panics, and unit/property coverage passes |
+| 2026-10-17 | 06 | Documentation and API polish | Started | Adding unit extraction/replacement helpers, package documentation, and final API behavior checks |
+| 2026-10-17 | 06 | Documentation and API polish | Completed | Added documented Source/Nodes/Unit/ExtractUnit/ReplaceUnit APIs and exact unit round-trip coverage |
+| 2026-10-17 | 06 | Final verification, diff review, and commit | Started | Running Go 1.27 tests, race/vet/build checks, inspecting the phase diff, and preparing the phase commit |
+| 2026-10-17 | 06 | Final verification, diff review, and commit | Completed | `go test ./...`, tomledit race tests, `go vet ./...`, CGO-disabled build, and `git diff --check` passed; fuzz smoke passed; no environment-limited checks for this phase |
