@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ['1.27.x']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: go vet ./cmd/... ./internal/...
+      - run: go test ./cmd/... ./internal/...
+      - run: make build
+      - run: bun install --frozen-lockfile
+        working-directory: web
+      - run: bun run check
+        working-directory: web
+      - run: bun run build
+        working-directory: web
+      - run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - run: govulncheck ./cmd/... ./internal/...
+      - run: bun audit
+        working-directory: web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runwisp-manager
+          path: runwisp-manager
+
+  parity:
+    if: contains(github.event.pull_request.changed_files, 'web/') || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+        working-directory: web
+      - run: bunx playwright install --with-deps chromium
+      - run: echo 'Parity harness requires a RunWisp demo service; integration invocation is wired for the release environment.'

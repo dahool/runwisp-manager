@@ -1,0 +1,5 @@
+@import "@runwisp/ui/theme.css";
+@source "../node_modules/@runwisp/ui";
+
+html, body { height: 100%; }
+body { margin: 0; }
