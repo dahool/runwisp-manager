@@ -1,5 +1,19 @@
 <script>
+	import { onMount } from 'svelte';
+
 	const version = 'dev';
+	let status = 'Checking RunWisp…';
+	let reachable = false;
+	onMount(async () => {
+		try {
+			const response = await fetch('/manager/api/status');
+			const data = await response.json();
+			reachable = response.ok && !data.lastError;
+			status = reachable ? `RunWisp ${data.daemon?.version || 'connected'}` : 'RunWisp unreachable';
+		} catch {
+			status = 'RunWisp unreachable';
+		}
+	});
 </script>
 
 <svelte:head><title>Manager · RunWisp</title></svelte:head>
@@ -7,7 +21,7 @@
 	<p class="kicker">RunWisp Manager</p>
 	<h1>Configuration, without the guesswork.</h1>
 	<p class="intro">The manager shell is ready. Editing, validation, and safe apply arrive in the next phases.</p>
-	<div class="status"><span class="dot"></span><span>Shell online</span><span class="version">{version}</span></div>
+	<div class="status"><span class:offline={!reachable} class="dot"></span><span>{status}</span><span class="version">{version}</span></div>
 </section>
 
 <style>
@@ -17,5 +31,6 @@
 	.intro { max-width: 480px; line-height: 1.65; font-size: 14px; opacity: .68; margin: 0; }
 	.status { display: flex; align-items: center; gap: 9px; font: 11px ui-monospace, monospace; margin-top: 44px; }
 	.dot { width: 7px; height: 7px; border-radius: 50%; background: #3eaa72; }
+	.dot.offline { background: #c87952; }
 	.version { opacity: .45; margin-left: 10px; }
 </style>

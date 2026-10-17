@@ -16,7 +16,7 @@ starting and completing each task, and must commit the completed phase.
 | Phase | Outcome | Status | Commit |
 | --- | --- | --- | --- |
 | 01 | Go binary serving RunWisp-identical empty shell | Not started | — |
-| 02 | Env config, daemon client, discovery, version check | Not started | — |
+| 02 | Env config, daemon client, discovery, version check | Complete | 96beec4aad9e6250cd830b19df7f607c2cbfdfab |
 | 03 | OIDC login, sessions, roles, CSRF | Not started | — |
 | 04 | Authenticated reverse proxy and bridge | Not started | — |
 | 05 | Multi-file config index and read model | Not started | — |
@@ -46,3 +46,19 @@ starting and completing each task, and must commit the completed phase.
 | 2026-10-17 | 01 | Build, CI, and parity harness | Started | Adding reproducible Make targets, static checks, GitHub Actions, and the browser parity script |
 | 2026-10-17 | 01 | Build, CI, and parity harness | Completed | Added Makefile, ignore/lint config, CI workflow, and light/dark parity capture harness; live parity execution is environment-blocked without Bun/Chromium and a RunWisp demo |
 | 2026-10-17 | 01 | Final verification | Blocked | Go unit tests, vet, Svelte check, and production build passed; live socket smoke test is blocked by the sandbox's bind restriction, and the final combined rerun was interrupted. Changes are committed with these limitations recorded. |
+| 2026-10-17 | 02 | Configuration and environment documentation | Started | Adding typed environment loading, secret-file support, typo detection, cross-field validation, and generated environment documentation |
+| 2026-10-17 | 02 | Configuration and environment documentation | Completed | Added typed config loading, `_FILE` secrets, unknown-variable suggestions, aggregated validation, redacted effective output, and generated environment documentation |
+| 2026-10-17 | 02 | RunWisp binary runner and version policy | Started | Adding bounded command execution, version parsing, and supported-version policy |
+| 2026-10-17 | 02 | RunWisp binary runner and version policy | Completed | Added shell-free context-bound runner, capped stdout/stderr capture, version extraction, and >=1.7.0 <2.0.0 policy tests |
+| 2026-10-17 | 02 | CHAP authentication helper | Started | Adding the specified PBKDF2 response helper and vectors |
+| 2026-10-17 | 02 | CHAP authentication helper | Completed | Added PBKDF2-HMAC-SHA256 response generation and the two required vectors |
+| 2026-10-17 | 02 | Daemon transports and API client | Started | Adding Unix and HTTP clients, CHAP login, bearer authentication, retries, and typed API models |
+| 2026-10-17 | 02 | Daemon transports and API client | Completed | Added Unix socket and HTTP clients, bearer-authenticated JSON calls, single-flight CHAP login, TLS CA support, 401 retry, and Retry-After handling |
+| 2026-10-17 | 02 | Discovery and capabilities | Started | Adding daemon discovery, config readability/writability probes, version matching, edit capability, and periodic refresh |
+| 2026-10-17 | 02 | Discovery and capabilities | Completed | Added capability refresh, Unix identity/HTTP info discovery, version policy, config probes, edit gating, and cancellable 30-second refresh |
+| 2026-10-17 | 02 | Manager status and readiness endpoints | Started | Adding status/readiness responses and trusted-proxy real-IP handling |
+| 2026-10-17 | 02 | Manager status and readiness endpoints | Completed | Added unauthenticated status and readiness endpoints plus trusted-proxy-gated forwarded client IP handling |
+| 2026-10-17 | 02 | UI daemon status banner | Started | Connecting the Phase 01 shell to the manager status endpoint and showing daemon reachability |
+| 2026-10-17 | 02 | UI daemon status banner | Completed | Added a resilient status fetch and visible connected/unreachable daemon indicator to the manager shell |
+| 2026-10-17 | 02 | Phase 02 verification and review | Started | Running formatting, generation, Go 1.27 tests/vet, UI checks, and inspecting the final diff |
+| 2026-10-17 | 02 | Phase 02 verification and review | Completed | Go 1.27 race tests, vet, generated environment docs, check-config smoke tests, Svelte check, and git diff check passed; Svelte retained one pre-existing unused CSS warning |

@@ -7,20 +7,31 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/runwisp/runwisp-manager/internal/daemon"
 	"github.com/runwisp/runwisp-manager/internal/ui"
 )
 
 // NewRouter builds the manager HTTP router. The version and commit values are
 // returned by the health endpoint for operators and orchestration checks.
 func NewRouter(version, commit string, logger *slog.Logger) http.Handler {
+	return NewRouterWithDiscovery(version, commit, logger, nil, nil)
+}
+
+func NewRouterWithDiscovery(version, commit string, logger *slog.Logger, discovery *daemon.Discovery, networks []*net.IPNet) http.Handler {
 	r := chi.NewRouter()
 	r.Use(RequestID, SecurityHeaders, Recoverer, AccessLog(logger))
+	if networks != nil {
+		r.Use(RealIP(networks))
+	}
 	r.Get("/manager/healthz", health(version, commit))
+	r.Get("/manager/api/status", statusHandler(discovery))
+	r.Get("/manager/readyz", readyHandler(discovery))
 	r.Mount("/manager", http.StripPrefix("/manager", ui.Handler()))
 	return r
 }
@@ -29,6 +40,11 @@ func NewRouter(version, commit string, logger *slog.Logger) http.Handler {
 func Serve(address, version, commit string, logger *slog.Logger) error {
 	logger.Info("starting manager", "address", address, "version", version, "commit", commit)
 	return http.ListenAndServe(address, NewRouter(version, commit, logger))
+}
+
+func ServeWithDiscovery(address, version, commit string, logger *slog.Logger, discovery *daemon.Discovery, networks []*net.IPNet) error {
+	logger.Info("starting manager", "address", address, "version", version, "commit", commit)
+	return http.ListenAndServe(address, NewRouterWithDiscovery(version, commit, logger, discovery, networks))
 }
 
 func health(version, commit string) http.HandlerFunc {
@@ -41,7 +57,9 @@ func health(version, commit string) http.HandlerFunc {
 func RequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get("X-Request-ID")
-		if id == "" { id = newRequestID() }
+		if id == "" {
+			id = newRequestID()
+		}
 		w.Header().Set("X-Request-ID", id)
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestIDKey{}, id)))
 	})
@@ -54,14 +72,20 @@ func SecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		w.Header().Set("Content-Security-Policy", "img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
-		if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") { w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains") }
+		if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		next.ServeHTTP(w, r)
 	})
 }
 
 func Recoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() { if recover() != nil { problem(w, http.StatusInternalServerError, "internal server error") } }()
+		defer func() {
+			if recover() != nil {
+				problem(w, http.StatusInternalServerError, "internal server error")
+			}
+		}()
 		next.ServeHTTP(w, r)
 	})
 }
@@ -77,21 +101,43 @@ func AccessLog(logger *slog.Logger) func(http.Handler) http.Handler {
 	}
 }
 
-type statusWriter struct { http.ResponseWriter; code int }
+type statusWriter struct {
+	http.ResponseWriter
+	code int
+}
+
 func (w *statusWriter) WriteHeader(code int) { w.code = code; w.ResponseWriter.WriteHeader(code) }
-func (w *statusWriter) Write(p []byte) (int, error) { if w.code == 0 { w.code = http.StatusOK }; return w.ResponseWriter.Write(p) }
-func (w *statusWriter) status() int { if w.code == 0 { return http.StatusOK }; return w.code }
+func (w *statusWriter) Write(p []byte) (int, error) {
+	if w.code == 0 {
+		w.code = http.StatusOK
+	}
+	return w.ResponseWriter.Write(p)
+}
+func (w *statusWriter) status() int {
+	if w.code == 0 {
+		return http.StatusOK
+	}
+	return w.code
+}
 
 type requestIDKey struct{}
 
 // requestID is intentionally header-based for now; middleware keeps the value
 // on the request while avoiding query strings in access logs.
 func requestID(r *http.Request) string {
-	if id, ok := r.Context().Value(requestIDKey{}).(string); ok { return id }
+	if id, ok := r.Context().Value(requestIDKey{}).(string); ok {
+		return id
+	}
 	return r.Header.Get("X-Request-ID")
 }
 
-func newRequestID() string { var b [12]byte; if _, err := rand.Read(b[:]); err != nil { return "unknown" }; return hex.EncodeToString(b[:]) }
+func newRequestID() string {
+	var b [12]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "unknown"
+	}
+	return hex.EncodeToString(b[:])
+}
 
 func problem(w http.ResponseWriter, status int, detail string) {
 	w.Header().Set("Content-Type", "application/problem+json")
