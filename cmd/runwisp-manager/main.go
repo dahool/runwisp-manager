@@ -18,6 +18,7 @@ import (
 	"github.com/runwisp/runwisp-manager/internal/auth"
 	"github.com/runwisp/runwisp-manager/internal/config"
 	"github.com/runwisp/runwisp-manager/internal/daemon"
+	"github.com/runwisp/runwisp-manager/internal/gitx"
 	"github.com/runwisp/runwisp-manager/internal/httpx"
 	"github.com/runwisp/runwisp-manager/internal/runwispbin"
 )
@@ -38,6 +39,34 @@ func main() {
 }
 
 func run(args []string) error {
+	if os.Getenv("RWM_GIT_ASKPASS_TOKEN") != "" && len(args) > 0 {
+		if strings.Contains(strings.ToLower(args[0]), "username") {
+			value := os.Getenv("RWM_GIT_ASKPASS_USERNAME")
+			if value == "" {
+				value = "x-access-token"
+			}
+			fmt.Println(value)
+		} else {
+			fmt.Println(os.Getenv("RWM_GIT_ASKPASS_TOKEN"))
+		}
+		return nil
+	}
+	if len(args) > 0 && args[0] == "git-askpass" {
+		prompt := os.Getenv("RWM_GIT_ASKPASS_PROMPT")
+		if len(args) > 1 {
+			prompt = args[1]
+		}
+		if prompt = strings.ToLower(strings.TrimSpace(prompt)); strings.Contains(prompt, "username") {
+			value := os.Getenv("RWM_GIT_ASKPASS_USERNAME")
+			if value == "" {
+				value = "x-access-token"
+			}
+			fmt.Println(value)
+			return nil
+		}
+		fmt.Println(os.Getenv("RWM_GIT_ASKPASS_TOKEN"))
+		return nil
+	}
 	if len(args) > 0 && args[0] == "--version" {
 		fmt.Printf("runwisp-manager %s (%s) %s/%s\n", version, commit, runtime.GOOS, runtime.GOARCH)
 		return nil
@@ -56,6 +85,22 @@ func run(args []string) error {
 			cancel()
 			if err != nil {
 				return fmt.Errorf("oidc discovery check failed: %w", err)
+			}
+		}
+		if c.GitEnabled != "false" && c.GitRepo != "" {
+			timeout, parseErr := time.ParseDuration(c.GitTimeout)
+			if parseErr != nil {
+				return parseErr
+			}
+			gitRunner, newErr := gitx.New(gitx.Options{Repo: c.GitRepo, Bin: c.GitBin, StateDir: c.StateDir, Timeout: timeout, AllowHooks: c.GitAllowHooks, Remote: c.GitRemote, Username: c.GitUsername, Token: c.GitToken, SSHKeyFile: c.GitSSHKeyFile, KnownHosts: c.GitSSHKnownHostsFile, AcceptNew: c.GitSSHInsecureAcceptNew})
+			if newErr != nil {
+				return fmt.Errorf("git configuration invalid: %w", newErr)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			newErr = gitRunner.CheckRemote(ctx, c.GitRemote)
+			cancel()
+			if newErr != nil {
+				return newErr
 			}
 		}
 		data, err := json.MarshalIndent(c.Effective(), "", "  ")

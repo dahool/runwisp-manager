@@ -30,6 +30,12 @@ type Options struct {
 	StateDir   string
 	Timeout    time.Duration
 	AllowHooks bool
+	Remote     string
+	Username   string
+	Token      string
+	SSHKeyFile string
+	KnownHosts string
+	AcceptNew  bool
 }
 
 // Git executes Git without a shell and serializes mutating operations.
@@ -39,6 +45,12 @@ type Git struct {
 	stateDir   string
 	timeout    time.Duration
 	allowHooks bool
+	remote     string
+	username   string
+	token      string
+	sshKeyFile string
+	knownHosts string
+	acceptNew  bool
 	mutateMu   sync.Mutex
 }
 
@@ -69,6 +81,18 @@ func New(options Options) (*Git, error) {
 	if err := os.MkdirAll(state, 0o700); err != nil {
 		return nil, fmt.Errorf("create git state directory: %w", err)
 	}
+	if options.SSHKeyFile != "" {
+		info, err := os.Stat(options.SSHKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("stat SSH key: %w", err)
+		}
+		if info.Mode().Perm()&0o077 != 0 {
+			return nil, errors.New("SSH key file must be mode 0600")
+		}
+		if !options.AcceptNew && options.KnownHosts == "" {
+			return nil, errors.New("SSH known hosts file is required")
+		}
+	}
 	bin := options.Bin
 	if bin == "" {
 		bin = "git"
@@ -77,7 +101,7 @@ func New(options Options) (*Git, error) {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
-	return &Git{repo: repo, bin: bin, stateDir: state, timeout: timeout, allowHooks: options.AllowHooks}, nil
+	return &Git{repo: repo, bin: bin, stateDir: state, timeout: timeout, allowHooks: options.AllowHooks, remote: options.Remote, username: options.Username, token: options.Token, sshKeyFile: options.SSHKeyFile, knownHosts: options.KnownHosts, acceptNew: options.AcceptNew}, nil
 }
 
 func (g *Git) Repo() string { return g.repo }
@@ -145,10 +169,39 @@ func (g *Git) environment(mutating bool) []string {
 		pathValue = "/usr/bin:/bin"
 	}
 	env := []string{"PATH=" + pathValue, "HOME=" + g.stateDir, "LANG=C", "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + filepath.Join(g.stateDir, "gitconfig")}
+	if g.token != "" {
+		env = append(env, "GIT_ASKPASS="+askpassProgram(), "RWM_GIT_ASKPASS_TOKEN="+g.token, "RWM_GIT_ASKPASS_USERNAME="+g.username)
+	}
+	if g.sshKeyFile != "" {
+		knownHosts := g.knownHosts
+		strict := "yes"
+		if g.acceptNew {
+			strict = "accept-new"
+		}
+		if knownHosts == "" && !g.acceptNew {
+			knownHosts = filepath.Join(g.stateDir, "known_hosts")
+		}
+		command := "ssh -i " + shellQuote(g.sshKeyFile) + " -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=" + strict
+		if knownHosts != "" {
+			command += " -o UserKnownHostsFile=" + shellQuote(knownHosts)
+		}
+		env = append(env, "GIT_SSH_COMMAND="+command)
+	}
 	if !mutating {
 		env = append(env, "GIT_OPTIONAL_LOCKS=0")
 	}
 	return env
+}
+
+func askpassProgram() string {
+	if value := os.Getenv("RWM_GIT_ASKPASS_PROGRAM"); value != "" {
+		return value
+	}
+	return os.Args[0]
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
 type limitedWriter struct {

@@ -35,6 +35,21 @@ type Pipeline struct {
 	results     map[string]Result
 }
 
+// WithSync serializes a repository operation with configuration saves. Git
+// sync callers use the same process and file lock as saves, so neither side
+// can mutate the managed tree concurrently.
+func (p *Pipeline) WithSync(ctx context.Context, fn func() error) error {
+	if p == nil || fn == nil {
+		return errors.New("sync operation is unavailable")
+	}
+	unlock, err := p.lock.Acquire(ctx, p.opts.StateDir, p.opts.LockTimeout)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return fn()
+}
+
 func (p *Pipeline) Daemon() daemon.Client { return p.opts.Daemon }
 
 func (p *Pipeline) Backups(file string) ([]Backup, error) {

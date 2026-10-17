@@ -59,6 +59,18 @@ type config struct {
 	ProxyExposeMetrics        bool   `env:"RWM_PROXY_EXPOSE_METRICS" doc:"Expose the daemon metrics endpoint"`
 	Bridge                    bool   `env:"RWM_BRIDGE" default:"true" doc:"Inject the manager bridge into RunWisp HTML"`
 	BridgePosition            string `env:"RWM_BRIDGE_POSITION" default:"bottom-right" doc:"Bridge pill position"`
+	GitRemote                 string `env:"RWM_GIT_REMOTE" default:"origin" doc:"Git remote name"`
+	GitPollInterval           string `env:"RWM_GIT_POLL_INTERVAL" default:"5m" doc:"Git fetch polling interval (0 disables polling)"`
+	GitPullStrategy           string `env:"RWM_GIT_PULL_STRATEGY" default:"ff-only" doc:"Default Git pull strategy"`
+	GitPullAllowStrategies    string `env:"RWM_GIT_PULL_ALLOW_STRATEGIES" default:"ff-only" doc:"Allowed Git pull strategies"`
+	GitAutoApplyPull          bool   `env:"RWM_GIT_AUTO_APPLY_PULL" doc:"Reload daemon after a valid pull"`
+	GitPushBranches           string `env:"RWM_GIT_PUSH_BRANCHES" doc:"Allowed Git push branches"`
+	GitPushAfterCommit        bool   `env:"RWM_GIT_PUSH_AFTER_COMMIT" doc:"Push after manager commits"`
+	GitToken                  string `env:"RWM_GIT_TOKEN" secret:"true" doc:"HTTPS Git token"`
+	GitUsername               string `env:"RWM_GIT_USERNAME" default:"x-access-token" doc:"HTTPS Git username"`
+	GitSSHKeyFile             string `env:"RWM_GIT_SSH_KEY_FILE" doc:"SSH private key file"`
+	GitSSHKnownHostsFile      string `env:"RWM_GIT_SSH_KNOWN_HOSTS_FILE" doc:"SSH known hosts file"`
+	GitSSHInsecureAcceptNew   bool   `env:"RWM_GIT_SSH_INSECURE_ACCEPT_NEW" doc:"Allow new SSH host keys"`
 }
 
 func main() {

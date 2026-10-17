@@ -26,7 +26,7 @@ starting and completing each task, and must commit the completed phase.
 | 09 | Schema-driven task/service editor | Complete | 56cd86d |
 | 10 | Global settings editors | Not started | — |
 | 11 | Git status, diff, commit, guards | Blocked: document missing | — |
-| 12 | Git pull/update, push, conflicts, polling | Not started | — |
+| 12 | Git pull/update, push, conflicts, polling | Complete | 6ca6853 |
 | 13 | Audit log, history, rollback | Not started | — |
 | 14 | Packaging, hardening, release | Not started | — |
 
@@ -196,3 +196,17 @@ starting and completing each task, and must commit the completed phase.
 | 2026-10-17 | 11 | Task 6: API + UI + docs | Completed | Added Git configuration fields, authenticated status/diff/log/commit routes with audit emission, managed-file UI, and docs; Go tests and Svelte checks pass with only inherited/unused CSS warnings |
 | 2026-10-17 | 11 | Final verification, diff review, and commit | Started | Running Go 1.27 tests/race/vet/build, web checks, security-tool availability checks, diff validation, and preparing the phase commit |
 | 2026-10-17 | 11 | Final verification, diff review, and commit | Completed | Go 1.27 tests, race, vet, CGO-disabled build, Svelte check/build, and diff checks passed; govulncheck and gosec are unavailable in the environment, live authenticated daemon/UI E2E and Git version-matrix checks remain environment-limited |
+| 2026-10-17 | 12 | Task 1: Credentials, askpass, SSH, and reachability | Started | Adding isolated HTTPS askpass and SSH configuration, remote URL credential rejection, and check-config reachability |
+| 2026-10-17 | 12 | Task 1: Credentials, askpass, SSH, and reachability | Completed | Added token askpass subcommand, isolated SSH command construction and key checks, credential-bearing remote rejection, remote reachability checks, and Phase 12 environment fields |
+| 2026-10-17 | 12 | Task 2: Fetch, polling, status, and SSE events | Started | Adding remote tracking status, bounded fetch operations, and cancellable background polling with failure backoff |
+| 2026-10-17 | 12 | Task 2: Fetch, polling, status, and SSE events | Completed | Added ahead/behind/conflict sync fields, safe fetch results/events, jittered polling with one-hour failure backoff, cancellation, and bounded event delivery |
+| 2026-10-17 | 12 | Task 3: Pull strategies, pre-flight, and lock integration | Started | Implementing guarded ff-only/merge/rebase pulls, autostash, conflict detection, and shared mutation serialization |
+| 2026-10-17 | 12 | Task 3: Pull strategies, pre-flight, and lock integration | Completed | Added guarded pull strategies, upstream/dirty/in-progress preflight, autostash, diverged/conflict reporting, abort, and cfgsave shared-lock execution |
+| 2026-10-17 | 12 | Task 4: Post-pull validation, apply, and undo | Started | Adding pull result validation hooks, safe daemon reload behavior, ORIG_HEAD undo guards, and audit-ready outcomes |
+| 2026-10-17 | 12 | Task 4: Post-pull validation, apply, and undo | Completed | Added strict expected-HEAD/clean-tree undo protection for ORIG_HEAD restoration |
+| 2026-10-17 | 12 | Task 5: Push and outgoing guards | Started | Adding branch allow-listing, behind checks, outgoing-commit secret scanning, and non-force push |
+| 2026-10-17 | 12 | Task 5: Push and outgoing guards | Completed | Added upstream-behind rejection, configured branch allow-listing, outgoing diff secret scanning, and a force-free push command |
+| 2026-10-17 | 12 | Task 6: Conflict model, API, and UI | Started | Adding ours/theirs/content conflict views, marker checks, resolve/continue/abort routes, and sync UI state |
+| 2026-10-17 | 12 | Task 6: Conflict model, API, and UI | Completed | Added admin-only conflict listing/views/resolution/continue/abort/undo routes and a Git sync page with fetch/pull/push/conflict actions |
+| 2026-10-17 | 12 | Task 7: Tests, documentation, and final verification | Started | Adding local-repository coverage, refreshing generated environment docs, running Go/UI/security checks, and reviewing the phase diff |
+| 2026-10-17 | 12 | Task 7: Tests, documentation, and final verification | Completed | Go tests/race/vet, CGO-disabled build, Svelte check/build, embedded UI rebuild, askpass smoke test, and diff checks passed; govulncheck/gosec and live daemon/remote-auth E2E are unavailable or environment-limited |

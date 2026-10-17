@@ -75,9 +75,13 @@ func NewRouterWithAuth(version, commit string, logger *slog.Logger, discovery *d
 				if discovery.Config.GitEnabled != "false" {
 					timeout, timeoutErr := time.ParseDuration(discovery.Config.GitTimeout)
 					if timeoutErr == nil {
-						gitRepo, gitRunner, detectErr := gitx.Detect(context.Background(), filepath.Dir(watcher.Tree().Root), discovery.Config.GitRepo, gitx.Options{Bin: discovery.Config.GitBin, StateDir: discovery.Config.StateDir, Timeout: timeout, AllowHooks: discovery.Config.GitAllowHooks})
+						gitRepo, gitRunner, detectErr := gitx.Detect(context.Background(), filepath.Dir(watcher.Tree().Root), discovery.Config.GitRepo, gitx.Options{Bin: discovery.Config.GitBin, StateDir: discovery.Config.StateDir, Timeout: timeout, AllowHooks: discovery.Config.GitAllowHooks, Remote: discovery.Config.GitRemote, Username: discovery.Config.GitUsername, Token: discovery.Config.GitToken, SSHKeyFile: discovery.Config.GitSSHKeyFile, KnownHosts: discovery.Config.GitSSHKnownHostsFile, AcceptNew: discovery.Config.GitSSHInsecureAcceptNew})
 						if detectErr == nil && gitRunner != nil && gitRepo.Enabled {
-							gitAPI := &api.GitAPI{Git: gitRunner, Repo: gitRepo, Watcher: watcher, Auth: authentication, Audit: audit.SlogSink{Logger: logger}, Options: gitx.CommitOptions{CommitterName: discovery.Config.GitAuthorName, CommitterEmail: discovery.Config.GitAuthorEmail, AuthorDomain: discovery.Config.GitAuthorDomain, ExpectedBranch: discovery.Config.GitBranch, SecretGuard: discovery.Config.GitSecretGuard, DenyGlobs: strings.Split(discovery.Config.GitDenyGlobs, ",")}}
+							gitSync := gitx.NewSync(gitRunner, discovery.Config.GitRemote)
+							if pollInterval, pollErr := time.ParseDuration(discovery.Config.GitPollInterval); pollErr == nil {
+								gitSync.Start(context.Background(), pollInterval)
+							}
+							gitAPI := &api.GitAPI{Git: gitRunner, Repo: gitRepo, Watcher: watcher, Auth: authentication, Audit: audit.SlogSink{Logger: logger}, Sync: gitSync, Remote: discovery.Config.GitRemote, PullAllow: strings.Split(discovery.Config.GitPullAllowStrategies, ","), PushBranches: strings.Split(discovery.Config.GitPushBranches, ","), AutoApplyPull: discovery.Config.GitAutoApplyPull, Options: gitx.CommitOptions{CommitterName: discovery.Config.GitAuthorName, CommitterEmail: discovery.Config.GitAuthorEmail, AuthorDomain: discovery.Config.GitAuthorDomain, ExpectedBranch: discovery.Config.GitBranch, SecretGuard: discovery.Config.GitSecretGuard, DenyGlobs: strings.Split(discovery.Config.GitDenyGlobs, ",")}}
 							apiRoot.Mount("/git", gitAPI.Routes())
 						}
 					}
