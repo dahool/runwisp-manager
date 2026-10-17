@@ -5,6 +5,7 @@ package runwispbin
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"regexp"
@@ -24,6 +25,22 @@ type Result struct {
 	ExitError      error
 }
 
+// ValidationOutput is the machine-readable result emitted by RunWisp.
+type ValidationOutput struct {
+	SchemaVersion int                 `json:"schemaVersion"`
+	Valid         bool                `json:"valid"`
+	Errors        []ValidationMessage `json:"errors"`
+	Warnings      []ValidationMessage `json:"warnings"`
+	Schedules     []json.RawMessage   `json:"schedules"`
+}
+
+type ValidationMessage struct {
+	Message string `json:"message"`
+	Key     string `json:"key"`
+	Line    int    `json:"line"`
+	Column  int    `json:"column"`
+}
+
 func (r Runner) Run(ctx context.Context, args ...string) (Result, error) {
 	timeout := r.Timeout
 	if timeout <= 0 {
@@ -32,7 +49,9 @@ func (r Runner) Run(ctx context.Context, args ...string) (Result, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, r.Binary, args...)
-	cmd.Env = r.Env
+	if r.Env != nil {
+		cmd.Env = r.Env
+	}
 	var stdout, stderr cappedBuffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -56,6 +75,47 @@ func (r Runner) Version(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("parse runwisp version output %q", strings.TrimSpace(string(result.Stdout)))
 	}
 	return string(match[1]), nil
+}
+
+// Schema obtains the binary's JSON schema without invoking a shell.
+func (r Runner) Schema(ctx context.Context) ([]byte, error) {
+	result, err := r.Run(ctx, "schema")
+	if err != nil {
+		return nil, err
+	}
+	if result.ExitError != nil {
+		return nil, fmt.Errorf("runwisp schema: %w: %s", result.ExitError, strings.TrimSpace(string(result.Stderr)))
+	}
+	if !json.Valid(result.Stdout) {
+		return nil, fmt.Errorf("runwisp schema: invalid JSON output")
+	}
+	return append([]byte(nil), result.Stdout...), nil
+}
+
+// Validate runs the authoritative validator. The caller supplies a root path
+// in a shadow tree; the runner never mutates configuration files.
+func (r Runner) Validate(ctx context.Context, root string) (ValidationOutput, error) {
+	previous := r.Timeout
+	r.Timeout = 10 * time.Second
+	result, err := r.Run(ctx, "validate", "--json", root)
+	r.Timeout = previous
+	if err != nil {
+		return ValidationOutput{}, err
+	}
+	if len(result.Stdout) == 0 {
+		if result.ExitError != nil {
+			return ValidationOutput{}, fmt.Errorf("runwisp validate: %w: %s", result.ExitError, strings.TrimSpace(string(result.Stderr)))
+		}
+		return ValidationOutput{}, fmt.Errorf("runwisp validate: empty JSON output")
+	}
+	var output ValidationOutput
+	if err := json.Unmarshal(result.Stdout, &output); err != nil {
+		return ValidationOutput{}, fmt.Errorf("decode runwisp validation: %w", err)
+	}
+	if result.ExitError != nil && output.Valid {
+		return ValidationOutput{}, fmt.Errorf("runwisp validate: %w", result.ExitError)
+	}
+	return output, nil
 }
 
 type cappedBuffer struct {

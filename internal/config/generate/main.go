@@ -24,6 +24,9 @@ type config struct {
 	RunWispInsecureSkipVerify bool   `env:"RWM_RUNWISP_INSECURE_SKIP_VERIFY" doc:"Skip RunWisp TLS verification"`
 	RunWispConfig             string `env:"RWM_RUNWISP_CONFIG" doc:"RunWisp configuration path"`
 	RunWispBin                string `env:"RWM_RUNWISP_BIN" default:"runwisp" doc:"RunWisp executable"`
+	ValidateEnvFile           string `env:"RWM_VALIDATE_ENV_FILE" doc:"Validation child environment file"`
+	ValidateEnvFromDaemon     string `env:"RWM_VALIDATE_ENV_FROM_DAEMON" default:"auto" doc:"Mirror daemon environment for validation"`
+	ValidateLenientEnv        bool   `env:"RWM_VALIDATE_LENIENT_ENV" doc:"Treat missing validation variables as warnings"`
 	StrictVersion             bool   `env:"RWM_STRICT_VERSION" doc:"Refuse daemon and binary version mismatch"`
 	InsecureCookies           bool   `env:"RWM_INSECURE_COOKIES" doc:"Allow insecure external cookies"`
 	EditEnabled               bool   `env:"RWM_EDIT_ENABLED" default:"true" doc:"Enable manager editing"`

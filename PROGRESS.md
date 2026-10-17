@@ -126,3 +126,17 @@ starting and completing each task, and must commit the completed phase.
 | 2026-10-17 | 06 | Documentation and API polish | Completed | Added documented Source/Nodes/Unit/ExtractUnit/ReplaceUnit APIs and exact unit round-trip coverage |
 | 2026-10-17 | 06 | Final verification, diff review, and commit | Started | Running Go 1.27 tests, race/vet/build checks, inspecting the phase diff, and preparing the phase commit |
 | 2026-10-17 | 06 | Final verification, diff review, and commit | Completed | `go test ./...`, tomledit race tests, `go vet ./...`, CGO-disabled build, and `git diff --check` passed; fuzz smoke passed; no environment-limited checks for this phase |
+| 2026-10-17 | 07 | Task 1: RunWisp schema and validation runner | Started | Extending the existing shell-free runner with bounded schema and authoritative validation commands |
+| 2026-10-17 | 07 | Task 1: RunWisp schema and validation runner | Completed | Added typed schema/validation output, JSON checks, shell-free argv execution, and the 10-second validation timeout |
+| 2026-10-17 | 07 | Task 2: Schema cache and resolved view | Started | Adding content-addressed schema caching, safe resolution, and schema format validation |
+| 2026-10-17 | 07 | Task 2: Schema cache and resolved view | Completed | Added SHA-256 state-dir caching, draft-schema decoding, cycle-safe `$ref`/`allOf` resolution, and drift metadata |
+| 2026-10-17 | 07 | Task 3: Versioned UI overlay and notifier hints | Started | Adding embedded overlay metadata, generic coverage, and pointer validation |
+| 2026-10-17 | 07 | Task 3: Versioned UI overlay and notifier hints | Completed | Added embedded versioned overlay data, generic widgets for every discovered property, and pointer validation helpers |
+| 2026-10-17 | 07 | Task 4: Shadow tree and validation environment | Started | Building isolated candidate trees, symlinked siblings, child-only environment mirroring, and bounded concurrency |
+| 2026-10-17 | 07 | Task 4: Shadow tree and validation environment | Completed | Added 0700 shadow trees with candidate replacement, symlinked siblings, cancellation cleanup, env-file/proc mirroring, and a four-slot validator semaphore |
+| 2026-10-17 | 07 | Task 5: Attribution, merge, and authoritative result | Started | Adding normalized issue contracts, fast multi-error feedback, authoritative precedence, and deduplication |
+| 2026-10-17 | 07 | Task 5: Attribution, merge, and authoritative result | Completed | Added Issue/Result contracts, multi-error quick checks, included-file attribution, de-duplication, degraded mode, and authoritative validity precedence |
+| 2026-10-17 | 07 | Task 6: Endpoints, tests, and documentation | Started | Adding focused contract tests, generated environment documentation, and final phase verification |
+| 2026-10-17 | 07 | Task 6: Endpoints, tests, and documentation | Completed | Added schema/validation/shadow contract tests, documented validation environment settings, and verified endpoint package compilation |
+| 2026-10-17 | 07 | Final verification, diff review, and commit | Started | Running Go 1.27 tests, race/vet/build checks, inspecting the Phase 07 diff, and preparing the phase commit |
+| 2026-10-17 | 07 | Final verification, diff review, and commit | Completed | Go 1.27 tests, focused race tests, vet, CGO-disabled build, and diff checks passed; authoritative live-binary corpus/E2E remains environment-limited because no RunWisp binary or daemon is available, and Go used `/tmp/rwm-go-build` because the default cache is read-only |

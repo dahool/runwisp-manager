@@ -19,6 +19,8 @@ import (
 	"github.com/runwisp/runwisp-manager/internal/cfgtree"
 	"github.com/runwisp/runwisp-manager/internal/daemon"
 	"github.com/runwisp/runwisp-manager/internal/proxy"
+	"github.com/runwisp/runwisp-manager/internal/runwispbin"
+	"github.com/runwisp/runwisp-manager/internal/schema"
 	"github.com/runwisp/runwisp-manager/internal/ui"
 )
 
@@ -53,6 +55,15 @@ func NewRouterWithAuth(version, commit string, logger *slog.Logger, discovery *d
 				configAPI := &api.ConfigAPI{Watcher: watcher, Auth: authentication}
 				viewer := authentication.RequireRole("viewer")(configAPI.Routes())
 				r.Mount("/manager/api", viewer)
+				if raw, schemaErr := (runwispbin.Runner{Binary: discovery.Config.RunWispBin}).Schema(context.Background()); schemaErr == nil {
+					if document, loadErr := schema.Load(raw, discovery.Config.StateDir, "", discovery.Capabilities.BinaryVersion); loadErr == nil {
+						validationAPI := api.NewValidationAPI(document, watcher, discovery.Config.RunWispBin, discovery.Config.StateDir)
+						validationRoutes := http.StripPrefix("/manager/api", validationAPI.Routes())
+						r.Get("/manager/api/schema", authentication.RequireRole("viewer")(validationRoutes).ServeHTTP)
+						r.Get("/manager/api/validate/current", authentication.RequireRole("viewer")(validationRoutes).ServeHTTP)
+						r.Post("/manager/api/validate", authentication.RequireRole("editor")(validationRoutes).ServeHTTP)
+					}
+				}
 			}
 		}
 		r.Mount("/manager", authentication.Routes())
