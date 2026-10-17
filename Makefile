@@ -3,7 +3,7 @@ COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GOCACHE ?= /tmp/runwisp-go-cache
 GOMODCACHE ?= /tmp/runwisp-go-mod-cache
 
-.PHONY: web build test lint run clean parity
+.PHONY: web build test lint run clean parity compose-test-up compose-test-down e2e
 
 web:
 	cd web && if command -v bun >/dev/null 2>&1; then bun install --frozen-lockfile; else npm install --no-audit --no-fund; fi && npm run check && npm run build
@@ -29,3 +29,12 @@ clean:
 
 parity:
 	cd web && bun run parity
+
+compose-test-up:
+	docker compose -f deploy/compose/compose.test.yaml up -d --build --wait
+
+compose-test-down:
+	docker compose -f deploy/compose/compose.test.yaml down -v --remove-orphans
+
+e2e:
+	cd web && RWM_E2E_URL=$${RWM_E2E_URL:-http://127.0.0.1:9478} npm run e2e

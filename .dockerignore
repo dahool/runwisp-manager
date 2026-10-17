@@ -1,0 +1,9 @@
+.git
+.github
+web/node_modules
+web/build
+web/.svelte-kit
+internal/ui/dist
+.runwisp-manager
+runwisp-manager
+*.log

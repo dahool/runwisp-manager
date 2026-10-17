@@ -71,6 +71,9 @@ func run(args []string) error {
 		fmt.Printf("runwisp-manager %s (%s) %s/%s\n", version, commit, runtime.GOOS, runtime.GOARCH)
 		return nil
 	}
+	if len(args) > 0 && args[0] == "healthcheck" {
+		return healthcheck(os.Environ())
+	}
 	if len(args) > 0 && args[0] == "check-config" {
 		c, err := config.Load(os.Environ())
 		if err != nil {
@@ -128,6 +131,11 @@ func run(args []string) error {
 	}
 	if problems := c.ValidateAuth(); len(problems) > 0 {
 		return fmt.Errorf("authentication configuration invalid: %s", strings.Join(problems, "; "))
+	}
+	if c.RunWispURL == "" {
+		if err := checkRunWispSocketOwner(c.SocketPath(), uint32(os.Geteuid())); err != nil {
+			return err
+		}
 	}
 	if address == "" {
 		address = c.Listen

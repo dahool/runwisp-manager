@@ -1,0 +1,4 @@
+# Keep RunWisp configuration and included files in this directory.
+[tasks.hello]
+description = "Example task"
+run = "echo hello"

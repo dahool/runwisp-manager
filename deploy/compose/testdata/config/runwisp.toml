@@ -1,0 +1,16 @@
+[daemon]
+listen = "0.0.0.0:9479"
+
+[tasks.hello]
+description = "Compose E2E fixture task"
+run = "echo hello"
+
+[notifiers.ops-telegram]
+type = "telegram"
+bot_token = "${TELEGRAM_BOT_TOKEN}"
+chat_id = "-1001234567890"
+
+[[route]]
+notifiers = ["ops-telegram"]
+[route.match]
+failure = true

@@ -28,7 +28,7 @@ starting and completing each task, and must commit the completed phase.
 | 11 | Git status, diff, commit, guards | Blocked: document missing | — |
 | 12 | Git pull/update, push, conflicts, polling | Complete | 6ca6853 |
 | 13 | Audit log, history, rollback | Not started | — |
-| 14 | Packaging, hardening, release | Not started | — |
+| 14 | Packaging, hardening, release | Implemented; release validation gates open | committed; hash in handoff |
 
 ## Activity log
 
@@ -224,3 +224,15 @@ starting and completing each task, and must commit the completed phase.
 | 2026-10-17 | 13 | Task 6: UI pages + tests | Completed | Added audit timeline/filter/verify/export UI and task history restore UI; Svelte check passes with only inherited unused-CSS warnings and production build passes |
 | 2026-10-17 | 13 | Final verification, diff review, and commit | Started | Running complete Go 1.27 checks, security-tool availability checks, inspecting the diff, and preparing the Phase 13 commit |
 | 2026-10-17 | 13 | Final verification, diff review, and commit | Completed | Go 1.27 full tests/race/vet, CGO-disabled build, Svelte check/build, embedded UI refresh, and diff checks passed; govulncheck/gosec are unavailable, and live daemon/auth/Git E2E remains environment-limited |
+| 2026-10-17 | 14 | Task 1: Dockerfile, healthcheck, release metadata, and production compose | Started | Inspecting existing build/version/config contracts and adding Docker-first packaging with hardening defaults |
+| 2026-10-17 | 14 | Task 1: Dockerfile, healthcheck, release metadata, and production compose | Completed | Added multi-stage Go/Bun/Debian image, matching RunWisp binary stage, native healthcheck command, production compose hardening, Docker ignore rules, and SSH known-hosts asset; dependency-backed tests are pending approved network access |
+| 2026-10-17 | 14 | Task 2: Compose test stack, fixtures, and E2E wiring | Started | Adding a CI/local compose stack, deterministic fixtures, Make targets, and guarded Playwright orchestration |
+| 2026-10-17 | 14 | Task 2: Compose test stack, fixtures, and E2E wiring | Completed | Added hardened test compose stack with RunWisp/mock OIDC, manager state volume, config/env fixtures, compose and E2E Make targets, and health endpoint Playwright coverage; `docker compose config --quiet` passed |
+| 2026-10-17 | 14 | Task 3: CI matrix, nightly canary, scanners, and release workflow | Started | Expanding CI for Go/RunWisp versions, compose E2E, supply-chain artifacts, security scans, and scheduled compatibility canary |
+| 2026-10-17 | 14 | Task 3: CI matrix, nightly canary, scanners, and release workflow | Completed | Added Go 1.26/1.27 CI, oldest/latest RunWisp compose E2E, scheduled latest-image canary, govulncheck/gosec/npm audit/Trivy/Gitleaks jobs, and tagged multi-arch GHCR signing/SBOM/provenance plus deterministic binary archives; workflow YAML parses, local Docker execution is blocked because the Docker socket is inaccessible |
+| 2026-10-17 | 14 | Task 4: Security review and packaging hardening fixes | Started | Reviewing container defaults, authentication/proxy/filesystem/Git/audit boundaries, route coverage, and supply-chain constraints; documenting findings and residual validation gaps |
+| 2026-10-17 | 14 | Task 4: Security review and packaging hardening fixes | Completed | Added security policy, threat model, and dated review; added startup UID mismatch diagnostics for an existing Unix socket; source/test review found no confirmed high/critical defect, while live Docker/read-only/capability and full authenticated E2E acceptance remain open |
+| 2026-10-17 | 14 | Task 5: Documentation and release rehearsal | Started | Writing operator deployment, secrets/OIDC/Git/Telegram, troubleshooting, upgrade, compatibility, changelog, and signing verification guidance; rehearsing all locally available release checks |
+| 2026-10-17 | 14 | Task 5: Documentation and release rehearsal | Completed | Added operator setup, secrets, OIDC/Git/Telegram, troubleshooting, upgrades, compatibility, security, and release docs plus changelog; no live Docker/Pocket ID release rehearsal could run in this environment |
+| 2026-10-17 | 14 | Final verification, diff review, and phase commit | Started | Rechecking Go 1.27, available cached Go packages, web checks, compose/workflow syntax, release asset configuration, and the exact files to commit |
+| 2026-10-17 | 14 | Final verification, diff review, and phase commit | Completed | Go 1.27 targeted socket-owner test and eight cached package tests passed; web check/unit/build passed with existing CSS warnings; workflow YAML, test compose config, formatting, and diff checks passed; full Go suite could not download uncached modules, Playwright and container runtime checks were blocked by sandbox network/socket restrictions |

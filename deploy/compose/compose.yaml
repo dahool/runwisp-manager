@@ -1,0 +1,68 @@
+name: runwisp
+
+services:
+  runwisp:
+    image: runwisp/runwisp:1.7.0
+    restart: unless-stopped
+    user: "1000:1000"
+    env_file: ./runwisp.env
+    volumes:
+      - ./config:/etc/runwisp
+      - runwisp-data:/var/lib/runwisp
+
+  manager:
+    image: ghcr.io/runwisp/runwisp-manager:v1.0.0-runwisp1.7.0
+    restart: unless-stopped
+    user: "1000:1000"
+    depends_on:
+      runwisp:
+        condition: service_started
+    ports:
+      - "127.0.0.1:9478:9478"
+    environment:
+      RWM_EXTERNAL_URL: https://manager.example.com
+      RWM_TRUSTED_PROXIES: 172.16.0.0/12
+      RWM_RUNWISP_DATA_DIR: /var/lib/runwisp
+      RWM_RUNWISP_CONFIG: /etc/runwisp/runwisp.toml
+      RWM_OIDC_ISSUER_URL: https://id.example.com
+      RWM_OIDC_CLIENT_ID: runwisp-manager
+      RWM_OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
+      RWM_SESSION_SECRET_FILE: /run/secrets/session_secret
+      RWM_OIDC_SCOPES: openid profile email groups
+      RWM_OIDC_ROLE_ADMIN_GROUPS: rwm-admin
+      RWM_OIDC_ROLE_EDITOR_GROUPS: rwm-editor
+      RWM_OIDC_ROLE_OPERATOR_GROUPS: rwm-operator
+      RWM_OIDC_ROLE_VIEWER_GROUPS: rwm-viewer
+      RWM_VALIDATE_ENV_FILE: /run/runwisp.env
+      RWM_GIT_SSH_KEY_FILE: /run/secrets/github_deploy_key
+      RWM_GIT_SSH_KNOWN_HOSTS_FILE: /etc/runwisp-manager/known_hosts.github
+      RWM_GIT_PUSH_BRANCHES: config/manager
+    volumes:
+      - ./config:/etc/runwisp
+      - runwisp-data:/var/lib/runwisp
+      - manager-state:/var/lib/runwisp-manager
+      - ./runwisp.env:/run/runwisp.env:ro
+    secrets:
+      - oidc_client_secret
+      - session_secret
+      - github_deploy_key
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    pids_limit: 128
+
+secrets:
+  oidc_client_secret:
+    file: ./secrets/oidc_client_secret
+  session_secret:
+    file: ./secrets/session_secret
+  github_deploy_key:
+    file: ./secrets/github_deploy_key
+
+volumes:
+  runwisp-data: {}
+  manager-state: {}

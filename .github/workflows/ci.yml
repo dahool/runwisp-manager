@@ -3,47 +3,72 @@ name: CI
 on:
   push:
   pull_request:
+  schedule:
+    - cron: '17 5 * * *'
+
+permissions:
+  contents: read
 
 jobs:
   verify:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        go: ['1.27.x']
+        go: ['1.26.x', '1.27.x']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.5.0
         with:
           go-version: ${{ matrix.go }}
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          bun-version: latest
-      - run: go vet ./cmd/... ./internal/...
-      - run: go test ./cmd/... ./internal/...
-      - run: make build
-      - run: bun install --frozen-lockfile
+          node-version: 22.23.2
+      - run: go version && go vet ./cmd/... ./internal/... && go test ./cmd/... ./internal/... && make build
+      - run: npm ci
         working-directory: web
-      - run: bun run check
+      - run: npm run check && npm run test && npm run build
         working-directory: web
-      - run: bun run build
+      - run: go install golang.org/x/vuln/cmd/govulncheck@latest && govulncheck ./cmd/... ./internal/...
+      - run: go install github.com/securego/gosec/v2/cmd/gosec@latest && gosec ./cmd/... ./internal/...
+      - run: go install github.com/google/go-licenses@v1.6.0 && go-licenses check ./... --allowed_licenses=MIT,Apache-2.0,BSD-3-Clause,BSD-2-Clause,ISC,Unicode-DFS-2016
+      - run: npm audit --audit-level=high
         working-directory: web
-      - run: go install golang.org/x/vuln/cmd/govulncheck@latest
-      - run: govulncheck ./cmd/... ./internal/...
-      - run: bun audit
-        working-directory: web
-      - uses: actions/upload-artifact@v4
-        with:
-          name: runwisp-manager
-          path: runwisp-manager
+      - name: Build container and run Trivy
+        run: |
+          docker build --build-arg RUNWISP_VERSION=1.7.0 -t runwisp-manager:ci .
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.58.2 image --exit-code 1 --severity HIGH,CRITICAL runwisp-manager:ci
+      - name: Run compose E2E on oldest and latest RunWisp
+        env:
+          RWM_UID: '1000'
+          RWM_GID: '1000'
+        run: |
+          for version in 1.7.0 latest; do
+            RUNWISP_VERSION="$version" docker compose -f deploy/compose/compose.test.yaml up -d --build --wait
+            manager_id="$(docker compose -f deploy/compose/compose.test.yaml ps -q manager)"
+            test "$(docker inspect -f '{{.HostConfig.ReadonlyRootfs}}' "$manager_id")" = true
+            docker inspect -f '{{json .HostConfig.CapDrop}}' "$manager_id" | grep -q 'ALL'
+            (cd web && npm ci && npx playwright install --with-deps chromium && RWM_E2E_URL=http://127.0.0.1:9478 npm run e2e)
+            docker compose -f deploy/compose/compose.test.yaml down -v --remove-orphans
+          done
+      - if: always()
+        run: docker compose -f deploy/compose/compose.test.yaml down -v --remove-orphans
 
-  parity:
-    if: contains(github.event.pull_request.changed_files, 'web/') || github.event_name == 'push'
+  secret-scan:
     runs-on: ubuntu-latest
-    needs: verify
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
-        working-directory: web
-      - run: bunx playwright install --with-deps chromium
-      - run: echo 'Parity harness requires a RunWisp demo service; integration invocation is wired for the release environment.'
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - name: Scan repository history for secrets
+        run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.2 detect --source=/repo --redact
+
+  compatibility-canary:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Build and validate against the newest RunWisp image
+        run: |
+          docker build --build-arg RUNWISP_VERSION=latest -t runwisp-manager:canary .
+          docker run --rm --entrypoint /usr/local/bin/runwisp runwisp-manager:canary --version

@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        runwisp: ['1.7.0', 'latest']
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Build and publish multi-architecture image with SBOM and provenance
+        env:
+          VERSION: ${{ github.ref_name }}
+          RUNWISP_VERSION: ${{ matrix.runwisp }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          suffix="runwisp${RUNWISP_VERSION}"
+          tags=(--tag "$image:$VERSION-$suffix" --tag "$image:$suffix")
+          if [[ "$RUNWISP_VERSION" == latest ]]; then
+            tags+=(--tag "$image:$VERSION")
+          fi
+          docker buildx create --use
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg VERSION="$VERSION" \
+            --build-arg COMMIT="$GITHUB_SHA" \
+            --build-arg RUNWISP_VERSION="$RUNWISP_VERSION" \
+            "${tags[@]}" \
+            --sbom=true --provenance=mode=max --push .
+          go install github.com/sigstore/cosign/v3/cmd/cosign@v3.0.6
+          "$(go env GOPATH)/bin/cosign" sign --yes "$image:$VERSION-$suffix"
+
+  binaries:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.5.0
+        with:
+          go-version: '1.27.0'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.23.2
+      - name: Build current web assets
+        run: cd web && npm ci && npm run build && cd .. && rsync -a --delete web/build/ internal/ui/dist/
+      - name: Build static archive
+        env:
+          VERSION: ${{ github.ref_name }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" go build -trimpath \
+            -ldflags "-s -w -X main.version=$VERSION -X main.commit=$GITHUB_SHA" \
+            -o "dist/runwisp-manager-$VERSION-linux-$ARCH" ./cmd/runwisp-manager
+          epoch="$(git show -s --format=%ct "$GITHUB_SHA")"
+          tar --mtime="@$epoch" --owner=0 --group=0 --numeric-owner \
+            -C dist -czf "dist/runwisp-manager-$VERSION-linux-$ARCH.tar.gz" "runwisp-manager-$VERSION-linux-$ARCH"
+          rm "dist/runwisp-manager-$VERSION-linux-$ARCH"
+          cd dist && sha256sum *.tar.gz > "sha256sums-$ARCH.txt"
+      - name: Upload archives to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" dist/* --clobber

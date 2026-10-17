@@ -1,0 +1,67 @@
+name: rwm-test
+
+services:
+  runwisp:
+    image: runwisp/runwisp:${RUNWISP_VERSION:-1.7.0}
+    user: "${RWM_UID:-1000}:${RWM_GID:-1000}"
+    environment:
+      RUNWISP_PASSWORD: test-password
+    volumes:
+      - ./testdata/config:/etc/runwisp
+      - runwisp-data:/var/lib/runwisp
+
+  mock-oidc:
+    image: ghcr.io/navikt/mock-oauth2-server:2.1.10
+    environment:
+      SERVER_PORT: "8080"
+    ports:
+      - "8080:8080"
+
+  manager:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        RUNWISP_VERSION: ${RUNWISP_VERSION:-1.7.0}
+        RWM_UID: ${RWM_UID:-1000}
+        RWM_GID: ${RWM_GID:-1000}
+    user: "${RWM_UID:-1000}:${RWM_GID:-1000}"
+    depends_on:
+      - runwisp
+      - mock-oidc
+    ports:
+      - "127.0.0.1:9478:9478"
+    extra_hosts:
+      - "oidc.localtest.me:host-gateway"
+    environment:
+      RWM_EXTERNAL_URL: http://localhost:9478
+      RWM_STATE_DIR: /var/lib/runwisp-manager
+      RWM_INSECURE_COOKIES: "true"
+      RWM_OIDC_ISSUER_URL: http://oidc.localtest.me:8080/default
+      RWM_OIDC_CLIENT_ID: rwm-test
+      RWM_OIDC_CLIENT_SECRET: test-secret
+      RWM_SESSION_SECRET: 0123456789abcdef0123456789abcdef
+      RWM_OIDC_SCOPES: openid profile email groups
+      RWM_OIDC_ROLE_ADMIN_GROUPS: rwm-admin
+      RWM_OIDC_ROLE_EDITOR_GROUPS: rwm-editor
+      RWM_OIDC_ROLE_OPERATOR_GROUPS: rwm-operator
+      RWM_OIDC_ROLE_VIEWER_GROUPS: rwm-viewer
+      RWM_VALIDATE_ENV_FILE: /run/test.env
+      RWM_GIT_ENABLED: "true"
+    volumes:
+      - ./testdata/config:/etc/runwisp
+      - runwisp-data:/var/lib/runwisp
+      - ./testdata/test.env:/run/test.env:ro
+      - manager-state:/var/lib/runwisp-manager
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    pids_limit: 128
+
+volumes:
+  runwisp-data: {}
+  manager-state: {}
