@@ -9,6 +9,12 @@ const json = async (url, options = {}) => {
 export const editorApi = {
 	unit: (kind, name) => json(`/manager/api/units/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`),
 	units: (kind) => json(`/manager/api/units?kind=${encodeURIComponent(kind)}`),
+	singleton: (kind) => json(`/manager/api/units/${encodeURIComponent(kind)}`),
+	references: (kind, name) => json(`/manager/api/units/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/references`),
+	routeMatches: (pattern) => json('/manager/api/config/routes:matches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pattern }) }),
+	reorderRoutes: (change) => json('/manager/api/config/routes:reorder', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': change.idempotencyKey }, body: JSON.stringify(change) }),
+	moveUnit: (change) => json('/manager/api/config/units:move', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': change.idempotencyKey }, body: JSON.stringify(change) }),
+	createFile: (request) => json('/manager/api/config/files', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request) }),
 	schema: () => json('/manager/api/schema'),
 	validate: (files, mode = 'quick') => json(`/manager/api/validate?mode=${mode}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files }) }),
 	preview: (change) => json('/manager/api/config/changes:preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(change) }),

@@ -60,6 +60,51 @@ type Tree struct {
 	ReadOnlyReason string   `json:"readOnlyReason,omitempty"`
 }
 
+// IncludePreview resolves include globs against the managed configuration
+// root without reading file contents. Invalid or escaping patterns are
+// reported as warnings and never produce matches outside the root.
+type IncludePreview struct {
+	Matches  []string `json:"matches"`
+	Warnings []string `json:"warnings,omitempty"`
+}
+
+func PreviewIncludes(root string, globs []string) (IncludePreview, error) {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return IncludePreview{}, fmt.Errorf("resolve include root: %w", err)
+	}
+	result := IncludePreview{}
+	seen := make(map[string]bool)
+	for _, pattern := range globs {
+		if pattern == "" || filepath.IsAbs(pattern) {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("include %q is not a relative glob", pattern))
+			continue
+		}
+		candidate := filepath.Join(root, filepath.FromSlash(pattern))
+		if !within(root, candidate) {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("include %q is outside managed area", pattern))
+			continue
+		}
+		matches, globErr := doublestar.FilepathGlob(candidate)
+		if globErr != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("include %q: %v", pattern, globErr))
+			continue
+		}
+		if len(matches) == 0 {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("include %q matched no files", pattern))
+		}
+		for _, match := range matches {
+			match, _ = filepath.Abs(match)
+			if within(root, match) && !seen[match] {
+				seen[match] = true
+				result.Matches = append(result.Matches, match)
+			}
+		}
+	}
+	sort.Strings(result.Matches)
+	return result, nil
+}
+
 // Options controls discovery. Root must be an absolute or resolvable TOML
 // file; callers may provide the daemon capability-derived read-only state.
 type Options struct {

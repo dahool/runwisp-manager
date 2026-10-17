@@ -97,7 +97,7 @@ func classify(path []string) (string, string) {
 	}
 	known := map[string]string{
 		"task": "task", "service": "service", "defaults": "defaults", "daemon": "daemon",
-		"storage": "storage", "notify": "notify", "notifier": "notifier", "route": "route",
+		"storage": "storage", "notify": "notify", "notifier": "notifier", "notifiers": "notifier", "route": "route",
 		"notificationRoute": "notificationRoute", "composeAlias": "composeAlias", "composeOverride": "composeOverride",
 	}
 	key := path[len(path)-1]

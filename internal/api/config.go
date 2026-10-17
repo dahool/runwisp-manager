@@ -2,10 +2,14 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"path"
+	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +19,7 @@ import (
 	"github.com/runwisp/runwisp-manager/internal/auth"
 	"github.com/runwisp/runwisp-manager/internal/cfgsave"
 	"github.com/runwisp/runwisp-manager/internal/cfgtree"
+	"github.com/runwisp/runwisp-manager/internal/tomledit"
 )
 
 type ConfigAPI struct {
@@ -31,14 +36,240 @@ func (a *ConfigAPI) Routes() http.Handler {
 	r.Get("/config/tree", a.tree)
 	r.Get("/config/files/{id}", a.file)
 	r.Get("/units", a.units)
+	r.Get("/units/{kind}", a.singleton)
 	r.Get("/units/{kind}/{name}", a.unit)
+	r.Get("/units/{kind}/{name}/references", a.references)
 	r.Get("/config/events", a.events)
 	r.Post("/config/secrets:reveal", a.reveal)
+	r.Post("/config/includes:preview", a.includesPreview)
+	r.Post("/config/files", a.createFile)
+	r.Post("/config/routes:reorder", a.reorderRoutes)
+	r.Post("/config/routes:matches", a.routeMatches)
+	r.Post("/config/units:move", a.moveUnit)
 	r.Post("/config/changes:preview", a.changesPreview)
 	r.Post("/config/changes", a.changes)
 	r.Post("/config/reload", a.reload)
 	r.Get("/config/backups", a.backups)
 	return r
+}
+
+func (a *ConfigAPI) includesPreview(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Globs []string `json:"globs"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&request); err != nil {
+		problem(w, http.StatusBadRequest, "invalid include preview request")
+		return
+	}
+	if a.Watcher == nil {
+		problem(w, http.StatusServiceUnavailable, "configuration tree unavailable")
+		return
+	}
+	preview, err := cfgtree.PreviewIncludes(a.Watcher.Tree().Root, request.Globs)
+	if err != nil {
+		problem(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, preview)
+}
+
+func (a *ConfigAPI) createFile(w http.ResponseWriter, r *http.Request) {
+	identity, ok := a.Auth.IdentityFromRequest(r)
+	if !ok || identity.Role != "admin" {
+		problem(w, http.StatusForbidden, "creating include files requires admin")
+		return
+	}
+	if a.Watcher == nil {
+		problem(w, http.StatusServiceUnavailable, "configuration tree unavailable")
+		return
+	}
+	var request struct {
+		Path     string `json:"path"`
+		Template string `json:"template"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&request); err != nil || request.Path == "" {
+		problem(w, http.StatusBadRequest, "path is required")
+		return
+	}
+	root := a.Watcher.Tree().Root
+	path, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(request.Path)))
+	if err != nil || !withinRoot(root, path) || filepath.Ext(path) != ".toml" {
+		problem(w, http.StatusBadRequest, "file must be a managed relative .toml path")
+		return
+	}
+	if _, err := os.Stat(path); err == nil {
+		problem(w, http.StatusConflict, "file already exists")
+		return
+	}
+	content := "# Managed include file. Add RunWisp units below.\n"
+	if request.Template == "task" {
+		content += "\n[task.example]\n# schedule = \"0 * * * *\"\n"
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		problem(w, http.StatusInternalServerError, "create include directory failed")
+		return
+	}
+	if err := os.WriteFile(path, []byte(content), 0o640); err != nil {
+		problem(w, http.StatusInternalServerError, "create include file failed")
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"path": path, "message": "File created. Add its relative glob to daemon includes before saving."})
+}
+
+func (a *ConfigAPI) reorderRoutes(w http.ResponseWriter, r *http.Request) {
+	if !a.requireEditor(w, r) {
+		return
+	}
+	var request struct {
+		File     cfgsave.FileID `json:"file"`
+		Base     string         `json:"base"`
+		From, To int
+		Apply    bool `json:"apply"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32<<10)).Decode(&request); err != nil || request.File == "" || request.From < 0 || request.To < 0 {
+		problem(w, http.StatusBadRequest, "file, base, from, and to are required")
+		return
+	}
+	if a.Save == nil {
+		problem(w, http.StatusServiceUnavailable, "save pipeline unavailable")
+		return
+	}
+	change := cfgsave.Change{IdempotencyKey: r.Header.Get("Idempotency-Key"), Base: map[cfgsave.FileID]string{request.File: request.Base}, Apply: request.Apply, Reason: "reorder notification routes", Ops: []cfgsave.FileOps{{File: request.File, Ops: []tomledit.Op{tomledit.ReorderArrayTable{Path: []string{"route"}, From: request.From, To: request.To}}}}}
+	result, err := a.Save.WithActor(actorFromRequest(a, r)).Save(r.Context(), change)
+	if err != nil {
+		writeChangeError(w, err, result)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (a *ConfigAPI) routeMatches(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Pattern string `json:"pattern"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&request); err != nil {
+		problem(w, http.StatusBadRequest, "invalid route match request")
+		return
+	}
+	if a.Watcher == nil {
+		problem(w, http.StatusServiceUnavailable, "configuration tree unavailable")
+		return
+	}
+	matches := make([]string, 0)
+	for _, unit := range a.Watcher.Tree().Units {
+		if unit.Kind != "task" {
+			continue
+		}
+		matched, err := path.Match(request.Pattern, unit.Name)
+		if err == nil && matched {
+			matches = append(matches, unit.Name)
+		}
+	}
+	sort.Strings(matches)
+	writeJSON(w, http.StatusOK, map[string]any{"matches": matches})
+}
+
+func (a *ConfigAPI) moveUnit(w http.ResponseWriter, r *http.Request) {
+	identity, ok := a.Auth.IdentityFromRequest(r)
+	if !ok || identity.Role != "admin" {
+		problem(w, http.StatusForbidden, "moving units requires admin")
+		return
+	}
+	if a.Watcher == nil || a.Save == nil {
+		problem(w, http.StatusServiceUnavailable, "configuration save unavailable")
+		return
+	}
+	var request struct {
+		Source string                    `json:"source"`
+		Target string                    `json:"target"`
+		Path   []string                  `json:"path"`
+		Base   map[cfgsave.FileID]string `json:"base"`
+		Apply  bool                      `json:"apply"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32<<10)).Decode(&request); err != nil || request.Source == "" || request.Target == "" || len(request.Path) == 0 || request.Source == request.Target {
+		problem(w, http.StatusBadRequest, "source, target, and unit path are required")
+		return
+	}
+	sourcePath, sourceOK := managedFilePath(a.Watcher.Tree(), request.Source)
+	targetPath, targetOK := managedFilePath(a.Watcher.Tree(), request.Target)
+	if !sourceOK || !targetOK {
+		problem(w, http.StatusForbidden, "source and target must be managed files")
+		return
+	}
+	source, err := os.ReadFile(sourcePath)
+	if err != nil {
+		problem(w, http.StatusNotFound, "source file is unreadable")
+		return
+	}
+	target, err := os.ReadFile(targetPath)
+	if err != nil {
+		problem(w, http.StatusNotFound, "target file is unreadable")
+		return
+	}
+	sourceDoc, err := tomledit.Parse(source)
+	if err != nil {
+		problem(w, http.StatusUnprocessableEntity, "source TOML is invalid")
+		return
+	}
+	unit, span := sourceDoc.ExtractUnit(request.Path)
+	if unit == nil || span[0] == span[1] {
+		problem(w, http.StatusNotFound, "unit not found")
+		return
+	}
+	updatedSource, err := sourceDoc.Apply([]tomledit.Op{tomledit.DeleteTable{Path: request.Path}})
+	if err != nil {
+		problem(w, http.StatusUnprocessableEntity, "could not extract unit")
+		return
+	}
+	separator := []byte("\n")
+	if bytes.Contains(target, []byte("\r\n")) {
+		separator = []byte("\r\n")
+	}
+	updatedTarget := append(append(bytes.Clone(target), separator...), unit...)
+	change := cfgsave.Change{IdempotencyKey: r.Header.Get("Idempotency-Key"), Base: request.Base, Apply: request.Apply, Reason: "move configuration unit", Raw: []cfgsave.FileContent{{File: cfgsave.FileID(request.Source), Content: updatedSource}, {File: cfgsave.FileID(request.Target), Content: updatedTarget}}}
+	result, err := a.Save.WithActor(actorFromRequest(a, r)).Save(r.Context(), change)
+	if err != nil {
+		writeChangeError(w, err, result)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func managedFilePath(tree cfgtree.Tree, id string) (string, bool) {
+	for _, file := range tree.Files {
+		if file.ID == id || file.Path == id {
+			return file.Path, file.Readable && !file.Outside
+		}
+	}
+	return "", false
+}
+
+func withinRoot(root, path string) bool {
+	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(path))
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+}
+
+func (a *ConfigAPI) singleton(w http.ResponseWriter, r *http.Request) {
+	if a.Watcher == nil {
+		problem(w, http.StatusServiceUnavailable, "configuration tree unavailable")
+		return
+	}
+	kind := chi.URLParam(r, "kind")
+	for _, unit := range a.Watcher.Tree().Units {
+		if unit.Kind != kind || unit.Name != "" {
+			continue
+		}
+		fileID := ""
+		for _, file := range a.Watcher.Tree().Files {
+			if file.Path == unit.File {
+				fileID = file.ID
+				break
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"kind": unit.Kind, "name": unit.Name, "file": unit.File, "fileId": fileID, "line": unit.Line, "hash": unit.Hash, "fileVersion": fileVersion(a.Watcher.Tree(), unit.File), "fields": cfgtree.MaskedFields(unit.Fields)})
+		return
+	}
+	problem(w, http.StatusNotFound, "singleton unit not found")
 }
 
 func (a *ConfigAPI) tree(w http.ResponseWriter, _ *http.Request) {
@@ -107,7 +338,14 @@ func (a *ConfigAPI) units(w http.ResponseWriter, r *http.Request) {
 		if value, ok := unit.Fields["schedule"].(string); ok {
 			schedule = value
 		}
-		units = append(units, map[string]any{"kind": unit.Kind, "name": unit.Name, "file": unit.File, "line": unit.Line, "hash": unit.Hash, "duplicate": unit.Duplicate, "schedule": schedule})
+		fileID, version := "", ""
+		for _, file := range a.Watcher.Tree().Files {
+			if file.Path == unit.File {
+				fileID, version = file.ID, file.Version
+				break
+			}
+		}
+		units = append(units, map[string]any{"kind": unit.Kind, "name": unit.Name, "file": unit.File, "fileId": fileID, "fileVersion": version, "line": unit.Line, "hash": unit.Hash, "duplicate": unit.Duplicate, "schedule": schedule})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"units": units})
 }
@@ -121,12 +359,57 @@ func (a *ConfigAPI) unit(w http.ResponseWriter, r *http.Request) {
 	for _, unit := range a.Watcher.Tree().Units {
 		if unit.Kind == kind && unit.Name == name {
 			fileID := ""
-			for _, file := range a.Watcher.Tree().Files { if file.Path == unit.File { fileID = file.ID; break } }
+			for _, file := range a.Watcher.Tree().Files {
+				if file.Path == unit.File {
+					fileID = file.ID
+					break
+				}
+			}
 			writeJSON(w, http.StatusOK, map[string]any{"kind": unit.Kind, "name": unit.Name, "file": unit.File, "fileId": fileID, "line": unit.Line, "hash": unit.Hash, "fileVersion": fileVersion(a.Watcher.Tree(), unit.File), "duplicate": unit.Duplicate, "fields": cfgtree.MaskedFields(unit.Fields)})
 			return
 		}
 	}
 	problem(w, http.StatusNotFound, "unit not found")
+}
+
+func (a *ConfigAPI) references(w http.ResponseWriter, r *http.Request) {
+	if a.Watcher == nil {
+		problem(w, http.StatusServiceUnavailable, "configuration tree unavailable")
+		return
+	}
+	kind, name := chi.URLParam(r, "kind"), chi.URLParam(r, "name")
+	if kind != "notifier" {
+		writeJSON(w, http.StatusOK, map[string]any{"references": []any{}})
+		return
+	}
+	refs := make([]map[string]any, 0)
+	for _, unit := range a.Watcher.Tree().Units {
+		if unit.Kind == "notifier" || !containsReference(unit.Fields, name) {
+			continue
+		}
+		refs = append(refs, map[string]any{"kind": unit.Kind, "name": unit.Name, "file": unit.File})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"references": refs})
+}
+
+func containsReference(value any, target string) bool {
+	switch v := value.(type) {
+	case string:
+		return v == target || strings.HasPrefix(v, target+":")
+	case []any:
+		for _, item := range v {
+			if containsReference(item, target) {
+				return true
+			}
+		}
+	case map[string]any:
+		for _, item := range v {
+			if containsReference(item, target) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (a *ConfigAPI) reveal(w http.ResponseWriter, r *http.Request) {

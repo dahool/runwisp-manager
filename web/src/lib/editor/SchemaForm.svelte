@@ -8,6 +8,8 @@
 	const kind = (definition) => definition?.type ?? (definition?.enum ? 'enum' : 'string');
 	function update(path, next) { onChange(setAt(value, path, next)); }
 	function errorFor(path) { return errors[path.join('.')] ?? errors[`/${path.join('/')}`] ?? ''; }
+	const secretField = (key, definition) => Boolean(definition?.secret || /token|password|webhook|credential|private/i.test(key));
+	const fieldValue = (key, path) => { const current = getAt(value, path); return current && typeof current === 'object' && current.masked ? '' : current ?? ''; };
 	function move(path, index, direction) {
 		const items = [...(getAt(value, path) ?? [])]; const target = index + direction;
 		if (target < 0 || target >= items.length) return;
@@ -22,6 +24,7 @@
 		<section class:error={fieldError} class="field">
 			<label for={`field-${key}`}><span>{definition.title ?? labelFor(key)}</span>{#if required.has(key)} <b aria-label="required">required</b>{/if}</label>
 			{#if definition.description}<p class="help">{definition.description}</p>{/if}
+			{#if definition.restartRequired}<p class="restart-hint">Takes effect after a daemon restart.</p>{/if}
 			{#if kind(definition) === 'boolean'}
 				<label class="toggle"><input id={`field-${key}`} type="checkbox" checked={Boolean(getAt(value, path))} disabled={readOnly} onchange={(event) => update(path, event.currentTarget.checked)} /><span>{getAt(value, path) ? 'Enabled' : 'Disabled'}</span></label>
 			{:else if definition.enum}
@@ -38,7 +41,8 @@
 				<textarea id={`field-${key}`} class:mono={definition.widget === 'cron' || definition['x-widget'] === 'code'} rows={definition['x-widget'] === 'code' ? 6 : 2} placeholder={definition.format === 'duration' ? 'e.g. 30s' : definition.widget === 'cron' ? 'e.g. 0 * * * *' : ''} value={getAt(value, path) ?? ''} disabled={readOnly} aria-describedby={fieldError ? `error-${key}` : undefined} oninput={(event) => update(path, event.currentTarget.value)}></textarea>
 				{#if definition.widget === 'cron' && nextRuns.length}<p class="help">Next runs: {nextRuns.join(' · ')}</p>{/if}
 			{:else}
-				<input id={`field-${key}`} type="text" value={getAt(value, path) ?? ''} disabled={readOnly} aria-describedby={fieldError ? `error-${key}` : undefined} oninput={(event) => update(path, event.currentTarget.value)} />
+				<input id={`field-${key}`} type={secretField(key, definition) ? 'password' : 'text'} placeholder={secretField(key, definition) ? 'Write a value or use ${VAR}' : ''} value={fieldValue(key, path)} disabled={readOnly} aria-describedby={fieldError ? `error-${key}` : undefined} oninput={(event) => update(path, event.currentTarget.value)} />
+				{#if secretField(key, definition)}<p class="help">Keep secrets out of Git. Use <code>{'${VAR}'}</code> or <code>{'${file:…}'}</code>.</p>{/if}
 			{/if}
 			{#if fieldError}<p id={`error-${key}`} class="field-error" role="alert">{fieldError}</p>{/if}
 		</section>
@@ -60,5 +64,6 @@
 	.toggle { justify-content: space-between; border: 1px solid var(--color-border, #d8dee8); border-radius: 3px; padding: 10px; font-weight: 400; }
 	.toggle input { accent-color: currentColor; }
 	.field-error { margin: 6px 0 0; color: var(--color-danger, #b24d43); font-size: 11px; }
+	.restart-hint { margin: 5px 0 8px; color: #996b1f; font-size: 11px; }
 	.repeatable, .map-editor { display: grid; gap: 7px; } .repeat-row, .map-row { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; } .map-row { grid-template-columns: .8fr 1.2fr; } .icon, .add { border: 1px solid var(--color-border, #d8dee8); border-radius: 3px; background: transparent; color: inherit; padding: 7px 9px; font: inherit; font-size: 11px; } .add { justify-self: start; }
 </style>

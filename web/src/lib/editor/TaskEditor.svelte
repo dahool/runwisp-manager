@@ -7,6 +7,7 @@
 	let { kind, name, isNew = false, onClose = () => {} } = $props();
 	let unit = $state(null), schema = $state(null), form = $state({}), original = $state({}), errors = $state({});
 	let identity = $state(null), loading = $state(true), busy = $state(false), error = $state('');
+	let references = $state([]), inheritedKeys = $state([]);
 	let review = $state(null), notice = $state(''), tab = $state('form'), raw = $state(''), rawOriginal = $state('');
 	let conflict = $state(false);
 	const editable = $derived(['editor', 'admin'].includes(identity?.role));
@@ -16,15 +17,17 @@
 
 	function findSchema(document) {
 		const root = document?.resolvedSchema ?? document?.schema ?? {};
-		return root?.$defs?.[kind] ?? root?.properties?.[kind] ?? root?.[kind] ?? { type: 'object', properties: Object.fromEntries(Object.keys(form).map((key) => [key, { type: typeof form[key] === 'boolean' ? 'boolean' : typeof form[key] === 'number' ? 'number' : 'string', title: key }])) };
+		if (kind === 'notifier' && !root?.$defs?.notifier && !root?.properties?.notifier) return { type: 'object', properties: { name: { type: 'string', title: 'Notifier name' }, type: { type: 'string', enum: ['telegram', 'email', 'webhook', 'inapp'] }, bot_token: { type: 'string', secret: true }, chat_id: { type: 'string' }, parse_mode: { type: 'string' }, template_path: { type: 'string' }, webhook_url: { type: 'string', secret: true }, username: { type: 'string', secret: true }, password: { type: 'string', secret: true } }, required: ['type'] };
+		const source = root?.$defs?.[kind] ?? root?.properties?.[kind] ?? root?.[kind] ?? { type: 'object', properties: Object.fromEntries(Object.keys(form).map((key) => [key, { type: typeof form[key] === 'boolean' ? 'boolean' : typeof form[key] === 'number' ? 'number' : 'string', title: key }])) };
+		return kind === 'notifier' ? { ...source, properties: { name: { type: 'string', title: 'Notifier name' }, ...(source.properties ?? {}) } } : source;
 	}
 	async function load() {
 		try {
 			const [me, document] = await Promise.all([fetch('/manager/api/me').then((response) => response.ok ? response.json() : null).catch(() => null), editorApi.schema().catch(() => null)]);
 		identity = me?.identity ?? me;
 		schema = document;
-		if (!isNew) { unit = await editorApi.unit(kind, name); form = structuredClone(unit.fields ?? {}); original = structuredClone(form); }
-		else { form = { name: '' }; original = {}; }
+		if (!isNew) { unit = await editorApi.unit(kind, name); form = structuredClone(unit.fields ?? {}); original = structuredClone(form); if (kind === 'notifier') references = (await editorApi.references(kind, name).catch(() => ({ references: [] }))).references ?? []; if (['task', 'service'].includes(kind)) { const defaults = await editorApi.singleton('defaults').catch(() => null); inheritedKeys = Object.keys(defaults?.fields ?? {}).filter((key) => form[key] === undefined); } }
+		else { const tree = await fetch('/manager/api/config/tree').then((response) => response.json()).catch(() => null); const root = tree?.files?.find((file) => file.root && file.readable); unit = root ? { fileId: root.id, file: root.path, fileVersion: root.version } : null; form = { name: '', type: 'telegram' }; original = {}; }
 	} catch (cause) { error = cause.message ?? 'Unable to load editor'; }
 		loading = false;
 	}
@@ -32,7 +35,11 @@
 		if (!unit?.fileId) return;
 		try { raw = await fetch(`/manager/api/config/files/${encodeURIComponent(unit.fileId)}?raw=true`).then((response) => response.text()); rawOriginal = raw; } catch { error = 'Raw configuration is unavailable'; }
 	}
-	function update(next) { form = next; notice = ''; }
+	function update(next) {
+		if (kind === 'notifier' && form.type && next.type && form.type !== next.type && !confirm('Changing type removes fields belonging to the previous notifier type. Continue?')) return;
+		if (kind === 'notifier' && form.type !== next.type) next = { type: next.type };
+		form = next; notice = '';
+	}
 	$effect(() => {
 		const timer = setTimeout(() => {
 			const next = {};
@@ -59,7 +66,9 @@
 		busy = false;
 	}
 	function changeRequest(apply) {
-		return { idempotencyKey: crypto.randomUUID(), base: { [unit?.fileId ?? unit?.file ?? '']: unit?.fileVersion ?? unit?.hash ?? '' }, ops: tab === 'raw' ? [] : [{ file: unit?.fileId ?? unit?.file ?? '', ops: toSaveOps(operations) }], raw: tab === 'raw' ? [{ file: unit?.fileId ?? unit?.file ?? '', content: raw }] : [], apply, reason: `${isNew ? 'create' : 'edit'} ${kind} ${name ?? form.name ?? ''}` };
+		const file = unit?.fileId ?? unit?.file ?? '';
+		const notifierCreate = isNew && kind === 'notifier' ? [{ type: 'addTable', path: ['notifiers', form.name], body: Object.entries(form).filter(([key]) => key !== 'name').map(([key, value]) => ({ key, value })) }] : toSaveOps(operations);
+		return { idempotencyKey: crypto.randomUUID(), base: { [file]: unit?.fileVersion ?? unit?.hash ?? '' }, ops: tab === 'raw' ? [] : [{ file, ops: notifierCreate }], raw: tab === 'raw' ? [{ file, content: raw }] : [], apply, reason: `${isNew ? 'create' : 'edit'} ${kind} ${name ?? form.name ?? ''}` };
 	}
 	async function save(apply = false) {
 		busy = true; error = ''; notice = '';
@@ -86,6 +95,8 @@
 {:else}<section class="editor-page">
 		<div class="editor-head"><div><a class="back" href={`/manager/${kind}s`}>← {kind}s</a><h1>{title}</h1><p class="muted">{unit?.file ?? 'New unit'}{#if unit?.fileVersion} · version {unit.fileVersion.slice(0, 12)}{/if}</p></div><div class="head-actions">{#if !isNew}<a class="quiet" href={`/manager/${kind}s/${encodeURIComponent(name)}`}>Read view</a>{/if}</div></div>
 		{#if !editable}<div class="banner" role="status">You have view access. An editor role is required to save changes.</div>{/if}
+		{#if kind === 'notifier' && references.length}<div class="banner danger" role="alert">This notifier is referenced by {references.length} unit{references.length === 1 ? '' : 's'}. Review those routes before renaming or deleting it.</div>{/if}
+		{#if inheritedKeys.length}<div class="banner" role="status">Inherited from defaults: {inheritedKeys.join(', ')}. Set a value here to override it.</div>{/if}
 		{#if error}<div class="banner danger" role="alert">{error}</div>{/if}{#if notice}<div class="banner success" role="status">{notice}</div>{/if}
 		<div class="tabs" role="tablist"><button class:active={tab === 'form'} role="tab" aria-selected={tab === 'form'} onclick={() => tab = 'form'}>Form</button>{#if identity?.role === 'admin'}<button class:active={tab === 'raw'} role="tab" aria-selected={tab === 'raw'} onclick={() => { tab = 'raw'; loadRaw(); }}>Raw TOML</button>{/if}</div>
 		<div class="editor-body">
