@@ -10,15 +10,18 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/runwisp/runwisp-manager/internal/api"
+	"github.com/runwisp/runwisp-manager/internal/audit"
 	"github.com/runwisp/runwisp-manager/internal/auth"
 	"github.com/runwisp/runwisp-manager/internal/cfgsave"
 	"github.com/runwisp/runwisp-manager/internal/cfgtree"
 	"github.com/runwisp/runwisp-manager/internal/daemon"
+	"github.com/runwisp/runwisp-manager/internal/gitx"
 	"github.com/runwisp/runwisp-manager/internal/proxy"
 	"github.com/runwisp/runwisp-manager/internal/runwispbin"
 	"github.com/runwisp/runwisp-manager/internal/schema"
@@ -67,8 +70,19 @@ func NewRouterWithAuth(version, commit string, logger *slog.Logger, discovery *d
 					return "", cfgsave.ErrManagedPath
 				}
 				configAPI.Save = cfgsave.New(cfgsave.Options{Root: watcher.Tree().Root, StateDir: discovery.Config.StateDir, EditEnabled: discovery.Config.EditEnabled, BackupKeep: 20, Resolve: resolver, Daemon: discovery.Client})
-				viewer := authentication.RequireRole("viewer")(configAPI.Routes())
-				r.Mount("/manager/api", viewer)
+				apiRoot := chi.NewRouter()
+				apiRoot.Mount("/", configAPI.Routes())
+				if discovery.Config.GitEnabled != "false" {
+					timeout, timeoutErr := time.ParseDuration(discovery.Config.GitTimeout)
+					if timeoutErr == nil {
+						gitRepo, gitRunner, detectErr := gitx.Detect(context.Background(), filepath.Dir(watcher.Tree().Root), discovery.Config.GitRepo, gitx.Options{Bin: discovery.Config.GitBin, StateDir: discovery.Config.StateDir, Timeout: timeout, AllowHooks: discovery.Config.GitAllowHooks})
+						if detectErr == nil && gitRunner != nil && gitRepo.Enabled {
+							gitAPI := &api.GitAPI{Git: gitRunner, Repo: gitRepo, Watcher: watcher, Auth: authentication, Audit: audit.SlogSink{Logger: logger}, Options: gitx.CommitOptions{CommitterName: discovery.Config.GitAuthorName, CommitterEmail: discovery.Config.GitAuthorEmail, AuthorDomain: discovery.Config.GitAuthorDomain, ExpectedBranch: discovery.Config.GitBranch, SecretGuard: discovery.Config.GitSecretGuard, DenyGlobs: strings.Split(discovery.Config.GitDenyGlobs, ",")}}
+							apiRoot.Mount("/git", gitAPI.Routes())
+						}
+					}
+				}
+				r.Mount("/manager/api", authentication.RequireRole("viewer")(apiRoot))
 				if raw, schemaErr := (runwispbin.Runner{Binary: discovery.Config.RunWispBin}).Schema(context.Background()); schemaErr == nil {
 					if document, loadErr := schema.Load(raw, discovery.Config.StateDir, "", discovery.Capabilities.BinaryVersion); loadErr == nil {
 						configAPI.Save = cfgsave.New(cfgsave.Options{Root: watcher.Tree().Root, StateDir: discovery.Config.StateDir, EditEnabled: discovery.Config.EditEnabled, BackupKeep: 20, Resolve: resolver, Daemon: discovery.Client, Validator: func(ctx context.Context, candidates []validate.Candidate) (validate.Result, error) {

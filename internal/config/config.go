@@ -68,6 +68,18 @@ type Config struct {
 	ProxyExposeMetrics        bool   `env:"RWM_PROXY_EXPOSE_METRICS" doc:"Expose the daemon metrics endpoint"`
 	Bridge                    bool   `env:"RWM_BRIDGE" default:"true" doc:"Inject the manager bridge into RunWisp HTML"`
 	BridgePosition            string `env:"RWM_BRIDGE_POSITION" default:"bottom-right" doc:"Bridge pill position"`
+	GitEnabled                string `env:"RWM_GIT_ENABLED" default:"auto" doc:"Git integration mode (auto, true, or false)"`
+	GitRepo                   string `env:"RWM_GIT_REPO" doc:"Git repository override"`
+	GitBin                    string `env:"RWM_GIT_BIN" default:"git" doc:"Git executable"`
+	GitBranch                 string `env:"RWM_GIT_BRANCH" doc:"Expected Git branch"`
+	GitAuthorName             string `env:"RWM_GIT_AUTHOR_NAME" default:"runwisp-manager" doc:"Git committer name"`
+	GitAuthorEmail            string `env:"RWM_GIT_AUTHOR_EMAIL" default:"manager@localhost" doc:"Git committer email"`
+	GitAuthorDomain           string `env:"RWM_GIT_AUTHOR_DOMAIN" default:"localhost" doc:"Fallback Git author email domain"`
+	GitAutocommit             bool   `env:"RWM_GIT_AUTOCOMMIT" doc:"Commit successful applies automatically"`
+	GitSecretGuard            bool   `env:"RWM_GIT_SECRET_GUARD" default:"true" doc:"Block literal secrets in commits"`
+	GitDenyGlobs              string `env:"RWM_GIT_DENY_GLOBS" default:"**/*.key,**/*.pem,**/.env*" doc:"Comma-separated denied Git paths"`
+	GitAllowHooks             bool   `env:"RWM_GIT_ALLOW_HOOKS" doc:"Allow repository hooks (unsafe)"`
+	GitTimeout                string `env:"RWM_GIT_TIMEOUT" default:"30s" doc:"Git command timeout"`
 }
 
 // Load reads the process environment, applying defaults and secret _FILE values.
@@ -123,6 +135,12 @@ func Load(environ []string) (Config, error) {
 
 func (c Config) validate() []string {
 	var problems []string
+	if c.GitEnabled != "auto" && c.GitEnabled != "true" && c.GitEnabled != "false" {
+		problems = append(problems, "RWM_GIT_ENABLED must be auto, true, or false")
+	}
+	if _, err := time.ParseDuration(c.GitTimeout); err != nil || c.GitTimeout == "" {
+		problems = append(problems, "RWM_GIT_TIMEOUT must be a duration")
+	}
 	if c.RunWispSocket != "" && c.RunWispURL != "" {
 		problems = append(problems, "RWM_RUNWISP_SOCKET and RWM_RUNWISP_URL are mutually exclusive")
 	}
