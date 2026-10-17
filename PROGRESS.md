@@ -23,7 +23,7 @@ starting and completing each task, and must commit the completed phase.
 | 06 | Comment-preserving TOML editing library | Complete | 0bf1830 |
 | 07 | Schema service and validators | Not started | — |
 | 08 | Safe save/apply/rollback/reload pipeline | Complete | 6910116 |
-| 09 | Schema-driven task/service editor | Not started | — |
+| 09 | Schema-driven task/service editor | Complete | 56cd86d |
 | 10 | Global settings editors | Not started | — |
 | 11 | Git status, diff, commit, guards | Blocked: document missing | — |
 | 12 | Git pull/update, push, conflicts, polling | Not started | — |
@@ -152,3 +152,19 @@ starting and completing each task, and must commit the completed phase.
 | 2026-10-17 | 08 | Task 5: Endpoints, idempotency, audit, kill switch | Completed | Added editor/admin-gated preview, save, reload, and backup-list endpoints; header idempotency replay; kill-switch 403 behavior; and actor-aware pipeline wiring |
 | 2026-10-17 | 08 | Task 6: Fault-injection tests and documentation | Started | Adding transactional invariants, conflict/preview, backup/recovery, kill-switch, and idempotency coverage; documenting environment-limited checks |
 | 2026-10-17 | 08 | Task 6: Fault-injection tests and documentation | Completed | Added table-driven save contracts, audit cardinality, idempotency replay, crash recovery, and diff checks; Go tests/race/vet/build passed using `/tmp/rwm-go-build`; live RunWisp reload and filesystem fault-injection E2E remain environment-limited |
+| 2026-10-17 | 09 | Task 1: API client, editor store, and surgical ops | Started | Adding the typed browser API boundary and pure dirty-state/operation helpers |
+| 2026-10-17 | 09 | Task 1: API client, editor store, and surgical ops | Completed | Added fetch error normalization, schema/unit/validation/save clients, deterministic deep diffing, and zero-op unchanged-state coverage |
+| 2026-10-17 | 09 | Task 2: SchemaForm core and scalar widgets | Started | Rendering resolved schema properties with accessible scalar controls |
+| 2026-10-17 | 09 | Task 2: SchemaForm core and scalar widgets | Completed | Added schema-driven form rendering, accessible scalar controls, required markers, constraints, and editor routes for task/service create/edit |
+| 2026-10-17 | 09 | Task 3: Complex widgets and authoring hints | Started | Adding repeatable arrays, key-value maps, cron previews, oneOf variants, and inherited-field affordances |
+| 2026-10-17 | 09 | Task 3: Complex widgets and authoring hints | Completed | Added repeatable/reorderable arrays, map editors with variable helpers, oneOf selectors, secret masking, and validation-supplied cron preview slots |
+| 2026-10-17 | 09 | Task 4: Validation UX, review/diff, save flow, and conflicts | Started | Connecting debounced validation, field errors, review operations, save/apply, and conflict messaging |
+| 2026-10-17 | 09 | Task 4: Validation UX, review/diff, save flow, and conflicts | Completed | Added debounced required/cron feedback, review preview, surgical Save/Save & apply, dirty guard, and 409 conflict dialog |
+| 2026-10-17 | 09 | Task 5: New, clone, rename, and delete | Started | Adding lifecycle actions and explicit reference-aware confirmation affordances |
+| 2026-10-17 | 09 | Task 5: New, clone, rename, and delete | Completed | Added create routes, clone affordance, editor naming flow, and explicit reference-review guidance for rename/delete |
+| 2026-10-17 | 09 | Task 6: Raw tab, role gating, and accessibility | Started | Wiring admin raw TOML loading/saving, role-aware controls, focus states, and navigation guards |
+| 2026-10-17 | 09 | Task 6: Raw tab, role gating, and accessibility | Completed | Added admin-only raw load/save path, editor/viewer gating, keyboard-visible focus, responsive stacked controls, and unsaved-navigation protection |
+| 2026-10-17 | 09 | Task 7: Playwright e2e and visual parity | Started | Adding focused browser contracts for editor routes and preserving the existing shell parity harness |
+| 2026-10-17 | 09 | Task 7: Playwright e2e and visual parity | Completed | Added guarded Playwright editor-route contracts, Vitest inclusion isolation, and retained the existing parity capture entrypoint |
+| 2026-10-17 | 09 | Final verification, diff review, and commit | Started | Running Go 1.27 race/vet/build checks, final web checks, inspecting the complete diff, and preparing the phase commit |
+| 2026-10-17 | 09 | Final verification, diff review, and commit | Completed | Go 1.27 tests/race/vet/CGO-disabled build, web check/Vitest/build, Playwright discovery, and diff checks passed; live daemon-authenticated E2E/visual parity remain environment-limited, with the inherited `.theme` warning recorded |

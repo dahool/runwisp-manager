@@ -6,6 +6,7 @@
     "build": "vite build",
     "check": "svelte-kit sync && svelte-check --tsconfig ./jsconfig.json",
     "test": "vitest run",
+		"e2e": "playwright test",
     "parity": "node scripts/parity.mjs"
   },
   "devDependencies": {

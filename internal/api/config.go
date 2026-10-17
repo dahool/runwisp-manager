@@ -120,7 +120,9 @@ func (a *ConfigAPI) unit(w http.ResponseWriter, r *http.Request) {
 	kind, name := chi.URLParam(r, "kind"), chi.URLParam(r, "name")
 	for _, unit := range a.Watcher.Tree().Units {
 		if unit.Kind == kind && unit.Name == name {
-			writeJSON(w, http.StatusOK, map[string]any{"kind": unit.Kind, "name": unit.Name, "file": unit.File, "line": unit.Line, "hash": unit.Hash, "fileVersion": fileVersion(a.Watcher.Tree(), unit.File), "duplicate": unit.Duplicate, "fields": cfgtree.MaskedFields(unit.Fields)})
+			fileID := ""
+			for _, file := range a.Watcher.Tree().Files { if file.Path == unit.File { fileID = file.ID; break } }
+			writeJSON(w, http.StatusOK, map[string]any{"kind": unit.Kind, "name": unit.Name, "file": unit.File, "fileId": fileID, "line": unit.Line, "hash": unit.Hash, "fileVersion": fileVersion(a.Watcher.Tree(), unit.File), "duplicate": unit.Duplicate, "fields": cfgtree.MaskedFields(unit.Fields)})
 			return
 		}
 	}
