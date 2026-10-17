@@ -4,19 +4,34 @@ package audit
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"time"
 )
 
 type Event struct {
-	Time     time.Time
-	Action   string
-	Subject  string
-	Username string
-	Role     string
-	RemoteIP string
-	Success  bool
-	Reason   string
+	ID         int64           `json:"id"`
+	Time       time.Time       `json:"ts"`
+	RequestID  string          `json:"requestId,omitempty"`
+	Subject    string          `json:"subject,omitempty"`
+	Username   string          `json:"username,omitempty"`
+	Email      string          `json:"email,omitempty"`
+	Role       string          `json:"role,omitempty"`
+	RemoteIP   string          `json:"ip,omitempty"`
+	UserAgent  string          `json:"userAgent,omitempty"`
+	Action     string          `json:"action"`
+	TargetKind string          `json:"targetKind,omitempty"`
+	TargetName string          `json:"targetName,omitempty"`
+	TargetFile string          `json:"targetFile,omitempty"`
+	Outcome    string          `json:"outcome"`
+	Success    bool            `json:"-"` // legacy callers; Outcome is used when set
+	Reason     string          `json:"reason,omitempty"`
+	Details    json.RawMessage `json:"details,omitempty"`
+	CfgBefore  string          `json:"cfgBefore,omitempty"`
+	CfgAfter   string          `json:"cfgAfter,omitempty"`
+	GitSHA     string          `json:"gitSha,omitempty"`
+	PrevHash   string          `json:"prevHash,omitempty"`
+	Hash       string          `json:"hash,omitempty"`
 }
 
 type Emitter interface{ Emit(context.Context, Event) }

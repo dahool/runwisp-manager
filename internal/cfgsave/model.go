@@ -47,6 +47,7 @@ type Change struct {
 	Raw            []FileContent     `json:"raw,omitempty"`
 	Apply          bool              `json:"apply"`
 	Reason         string            `json:"reason,omitempty"`
+	Rollback       bool              `json:"-"`
 }
 
 // Conflict describes the current version and the change visible to the UI.

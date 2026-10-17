@@ -50,6 +50,12 @@ type Session struct {
 	IDTokenHint string
 }
 
+type SessionInfo struct {
+	ID                                         string `json:"id"`
+	Username, Name, Email, Role, IP, UserAgent string
+	CreatedAt, LastSeenAt, ExpiresAt           time.Time
+}
+
 type Flow struct {
 	State, Nonce, CodeVerifier, ReturnTo string
 	ExpiresAt                            time.Time
@@ -81,6 +87,7 @@ func OpenStore(ctx context.Context, stateDir string, secret []byte) (*Store, err
 }
 
 func (s *Store) Close() error { return s.db.Close() }
+func (s *Store) DB() *sql.DB  { return s.db }
 
 func (s *Store) CreateFlow(ctx context.Context, flow Flow) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO oidc_flows(state,nonce,code_verifier,return_to,expires_at) VALUES(?,?,?,?,?)`, flow.State, flow.Nonce, flow.CodeVerifier, flow.ReturnTo, flow.ExpiresAt.Unix())
@@ -180,6 +187,31 @@ func (s *Store) DeleteSession(ctx context.Context, id string) error {
 		return fmt.Errorf("delete session: %w", err)
 	}
 	return nil
+}
+
+func (s *Store) ListSessions(ctx context.Context) ([]SessionInfo, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT hex(id_hash),username,name,email,role,created_at,last_seen_at,expires_at,ip,user_agent FROM sessions ORDER BY last_seen_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SessionInfo
+	for rows.Next() {
+		var v SessionInfo
+		var created, last, expires int64
+		if err := rows.Scan(&v.ID, &v.Username, &v.Name, &v.Email, &v.Role, &created, &last, &expires, &v.IP, &v.UserAgent); err != nil {
+			return nil, err
+		}
+		v.CreatedAt = time.Unix(created, 0)
+		v.LastSeenAt = time.Unix(last, 0)
+		v.ExpiresAt = time.Unix(expires, 0)
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+func (s *Store) RevokeSessionHash(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE hex(id_hash)=?`, id)
+	return err
 }
 
 func (s *Store) Janitor(ctx context.Context, interval time.Duration) {

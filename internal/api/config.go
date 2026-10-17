@@ -3,6 +3,8 @@ package api
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -19,6 +21,7 @@ import (
 	"github.com/runwisp/runwisp-manager/internal/auth"
 	"github.com/runwisp/runwisp-manager/internal/cfgsave"
 	"github.com/runwisp/runwisp-manager/internal/cfgtree"
+	"github.com/runwisp/runwisp-manager/internal/history"
 	"github.com/runwisp/runwisp-manager/internal/tomledit"
 )
 
@@ -27,6 +30,7 @@ type ConfigAPI struct {
 	Auth    *auth.Authenticator
 	Audit   audit.Emitter
 	Save    *cfgsave.Pipeline
+	History *history.Service
 	mu      sync.Mutex
 	reveals []time.Time
 }
@@ -39,6 +43,10 @@ func (a *ConfigAPI) Routes() http.Handler {
 	r.Get("/units/{kind}", a.singleton)
 	r.Get("/units/{kind}/{name}", a.unit)
 	r.Get("/units/{kind}/{name}/references", a.references)
+	r.Get("/units/{kind}/{name}/history", a.historyList)
+	r.Get("/units/{kind}/{name}/history/{versionId}", a.historyVersion)
+	r.Get("/units/{kind}/{name}/history/{versionId}/diff", a.historyDiff)
+	r.Post("/units/{kind}/{name}/history/{versionId}:restore", a.historyRestore)
 	r.Get("/config/events", a.events)
 	r.Post("/config/secrets:reveal", a.reveal)
 	r.Post("/config/includes:preview", a.includesPreview)
@@ -51,6 +59,110 @@ func (a *ConfigAPI) Routes() http.Handler {
 	r.Post("/config/reload", a.reload)
 	r.Get("/config/backups", a.backups)
 	return r
+}
+
+func (a *ConfigAPI) historyTarget(r *http.Request) (string, []string, bool) {
+	if a.History == nil || a.Watcher == nil {
+		return "", nil, false
+	}
+	kind, name := chi.URLParam(r, "kind"), chi.URLParam(r, "name")
+	for _, unit := range a.Watcher.Tree().Units {
+		if unit.Kind == kind && unit.Name == name {
+			return unit.File, []string{kind, name}, true
+		}
+	}
+	return "", nil, false
+}
+func (a *ConfigAPI) historyList(w http.ResponseWriter, r *http.Request) {
+	file, path, ok := a.historyTarget(r)
+	if !ok {
+		problem(w, http.StatusNotFound, "unit history unavailable")
+		return
+	}
+	values, err := a.History.List(r.Context(), file, path, false)
+	if err != nil {
+		problem(w, http.StatusInternalServerError, "history unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"versions": values})
+}
+func (a *ConfigAPI) historyVersion(w http.ResponseWriter, r *http.Request) {
+	file, path, ok := a.historyTarget(r)
+	if !ok {
+		problem(w, http.StatusNotFound, "unit history unavailable")
+		return
+	}
+	identity, _ := a.Auth.IdentityFromRequest(r)
+	v, err := a.History.Text(r.Context(), file, path, chi.URLParam(r, "versionId"), identity.Role == "admin")
+	if err != nil {
+		problem(w, http.StatusNotFound, "history version not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+func (a *ConfigAPI) historyDiff(w http.ResponseWriter, r *http.Request) {
+	file, path, ok := a.historyTarget(r)
+	if !ok {
+		problem(w, http.StatusNotFound, "unit history unavailable")
+		return
+	}
+	identity, _ := a.Auth.IdentityFromRequest(r)
+	v, err := a.History.Text(r.Context(), file, path, chi.URLParam(r, "versionId"), identity.Role == "admin")
+	if err != nil {
+		problem(w, http.StatusNotFound, "history version not found")
+		return
+	}
+	current := []byte{}
+	if data, e := os.ReadFile(file); e == nil {
+		if doc, e := tomledit.Parse(data); e == nil {
+			current, _ = doc.ExtractUnit(path)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"diff": cfgsave.UnifiedDiff([]byte(v.Text), current, file)})
+}
+
+func (a *ConfigAPI) historyRestore(w http.ResponseWriter, r *http.Request) {
+	identity, ok := a.Auth.IdentityFromRequest(r)
+	if !ok || (identity.Role != "editor" && identity.Role != "admin") {
+		problem(w, http.StatusForbidden, "restoring history requires editor role")
+		return
+	}
+	file, path, ok := a.historyTarget(r)
+	if !ok || a.Save == nil {
+		problem(w, http.StatusNotFound, "unit history unavailable")
+		return
+	}
+	version, err := a.History.Text(r.Context(), file, path, chi.URLParam(r, "versionId"), true)
+	if err != nil {
+		problem(w, http.StatusNotFound, "history version not found")
+		return
+	}
+	current, err := os.ReadFile(file)
+	if err != nil {
+		problem(w, http.StatusNotFound, "current file unavailable")
+		return
+	}
+	doc, err := tomledit.Parse(current)
+	if err != nil {
+		problem(w, http.StatusUnprocessableEntity, "current file is invalid")
+		return
+	}
+	updated, err := doc.ReplaceUnit(path, []byte(version.Text))
+	if err != nil {
+		problem(w, http.StatusUnprocessableEntity, "history version cannot be restored")
+		return
+	}
+	sum := sha256.Sum256(current)
+	change := cfgsave.Change{IdempotencyKey: r.Header.Get("Idempotency-Key"), Base: map[cfgsave.FileID]string{cfgsave.FileID(file): hex.EncodeToString(sum[:])}, Raw: []cfgsave.FileContent{{File: cfgsave.FileID(file), Content: updated}}, Apply: true, Rollback: true, Reason: "restore history version " + version.ID}
+	result, err := a.Save.WithActor(audit.Event{Subject: identity.Sub, Username: identity.Username, Email: identity.Email, Role: identity.Role}).Save(r.Context(), change)
+	if err != nil {
+		writeChangeError(w, err, result)
+		return
+	}
+	if a.Audit != nil {
+		a.Audit.Emit(r.Context(), audit.Event{Action: "config.rollback", Subject: identity.Sub, Username: identity.Username, Email: identity.Email, Role: identity.Role, Outcome: "ok", Success: true, TargetKind: chi.URLParam(r, "kind"), TargetName: chi.URLParam(r, "name"), TargetFile: file, GitSHA: version.SHA, Reason: version.ID})
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (a *ConfigAPI) includesPreview(w http.ResponseWriter, r *http.Request) {

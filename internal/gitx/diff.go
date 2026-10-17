@@ -97,3 +97,20 @@ func (g *Git) Log(ctx context.Context, path string, limit int) ([]LogEntry, erro
 	}
 	return entries, nil
 }
+
+// Show returns a file from a specific commit. Both arguments are validated
+// before being passed as separate git arguments.
+func (g *Git) Show(ctx context.Context, sha, path string) ([]byte, error) {
+	if err := ValidateRef(sha); err != nil {
+		return nil, err
+	}
+	literal, err := LiteralPath(path)
+	if err != nil {
+		return nil, err
+	}
+	out, err := g.Run(ctx, "show", sha+":"+literal)
+	if err != nil {
+		return nil, fmt.Errorf("read git file: %w", err)
+	}
+	return out, nil
+}

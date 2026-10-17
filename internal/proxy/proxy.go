@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/runwisp/runwisp-manager/internal/audit"
 	"github.com/runwisp/runwisp-manager/internal/auth"
 	"github.com/runwisp/runwisp-manager/internal/config"
 	"github.com/runwisp/runwisp-manager/internal/daemon"
@@ -27,10 +28,15 @@ type Handler struct {
 	auth   *auth.Authenticator
 	config config.Config
 	logger *slog.Logger
+	audit  audit.Emitter
 }
 
 func New(client daemon.Client, authentication *auth.Authenticator, c config.Config, logger *slog.Logger) http.Handler {
-	return &Handler{client: client, auth: authentication, config: c, logger: logger}
+	return NewWithAudit(client, authentication, c, logger, nil)
+}
+
+func NewWithAudit(client daemon.Client, authentication *auth.Authenticator, c config.Config, logger *slog.Logger, emitter audit.Emitter) http.Handler {
+	return &Handler{client: client, auth: authentication, config: c, logger: logger, audit: emitter}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +50,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	class := classify(r.Method, r.URL.Path, public, h.config.ProxyExposeMetrics)
 	if class == Denied {
 		h.logDenied(r)
+		h.emit(r, audit.Event{Action: "proxy.denied", RemoteIP: r.RemoteAddr, Outcome: "denied", Success: false, Reason: "path or method denied", TargetFile: r.URL.Path})
 		problem(w, http.StatusForbidden, "RunWisp path is not available through the manager")
 		return
 	}
@@ -53,6 +60,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if minimum := minimumRole(class); minimum != "" && rank(identity.Role) < rank(minimum) {
+		h.emit(r, audit.Event{Action: "proxy.denied", Subject: identity.Sub, Username: identity.Username, Role: identity.Role, RemoteIP: r.RemoteAddr, Outcome: "denied", Success: false, Reason: "insufficient role", TargetFile: r.URL.Path})
 		problem(w, http.StatusForbidden, "insufficient role")
 		return
 	}
@@ -96,6 +104,9 @@ func (h *Handler) reverseProxy() *httputil.ReverseProxy {
 		Transport:     h.client.RoundTripper(),
 		FlushInterval: -1,
 		ModifyResponse: func(resp *http.Response) error {
+			if resp.Request != nil && classForPath(resp.Request.Method, resp.Request.URL.Path) == Operate {
+				h.emit(resp.Request, audit.Event{Action: operateAction(resp.Request.Method, resp.Request.URL.Path), RemoteIP: resp.Request.RemoteAddr, Outcome: outcome(resp.StatusCode), Success: resp.StatusCode < 400, TargetFile: resp.Request.URL.Path})
+			}
 			resp.Header.Del("Set-Cookie")
 			addMissingHeaders(resp.Header, resp.Request != nil && resp.Request.URL.Scheme == "https")
 			if resp.Request != nil && strings.HasPrefix(resp.Request.Header.Get("Accept"), "text/event-stream") {
@@ -243,6 +254,33 @@ func (h *Handler) logDenied(r *http.Request) {
 	if h.logger != nil {
 		h.logger.Warn("proxy path denied", "method", r.Method, "path", r.URL.Path)
 	}
+}
+
+func (h *Handler) emit(r *http.Request, event audit.Event) {
+	if h.audit != nil {
+		h.audit.Emit(r.Context(), event)
+	}
+}
+func classForPath(method, path string) Class { return classify(method, path, nil, false) }
+func outcome(status int) string {
+	if status < 400 {
+		return "ok"
+	}
+	if status == http.StatusForbidden || status == http.StatusUnauthorized {
+		return "denied"
+	}
+	return "error"
+}
+func operateAction(method, requestPath string) string {
+	parts := strings.Split(strings.Trim(requestPath, "/"), "/")
+	verb := "operate"
+	if len(parts) > 0 {
+		verb = parts[len(parts)-1]
+	}
+	if method == http.MethodDelete {
+		verb = "delete"
+	}
+	return "run." + verb
 }
 func problem(w http.ResponseWriter, status int, detail string) {
 	w.Header().Set("Content-Type", "application/problem+json")

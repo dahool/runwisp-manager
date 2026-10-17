@@ -22,6 +22,7 @@ import (
 	"github.com/runwisp/runwisp-manager/internal/cfgtree"
 	"github.com/runwisp/runwisp-manager/internal/daemon"
 	"github.com/runwisp/runwisp-manager/internal/gitx"
+	"github.com/runwisp/runwisp-manager/internal/history"
 	"github.com/runwisp/runwisp-manager/internal/proxy"
 	"github.com/runwisp/runwisp-manager/internal/runwispbin"
 	"github.com/runwisp/runwisp-manager/internal/schema"
@@ -40,6 +41,10 @@ func NewRouterWithDiscovery(version, commit string, logger *slog.Logger, discove
 }
 
 func NewRouterWithAuth(version, commit string, logger *slog.Logger, discovery *daemon.Discovery, networks []*net.IPNet, authentication *auth.Authenticator) http.Handler {
+	return NewRouterWithAuthAudit(version, commit, logger, discovery, networks, authentication, nil)
+}
+
+func NewRouterWithAuthAudit(version, commit string, logger *slog.Logger, discovery *daemon.Discovery, networks []*net.IPNet, authentication *auth.Authenticator, emitter audit.Emitter) http.Handler {
 	r := chi.NewRouter()
 	r.Use(RequestID, SecurityHeaders, Recoverer, AccessLog(logger))
 	if networks != nil {
@@ -57,7 +62,11 @@ func NewRouterWithAuth(version, commit string, logger *slog.Logger, discovery *d
 			watcher, err := cfgtree.NewWatcher(cfgtree.Options{Root: discovery.Capabilities.ConfigPath, ReadOnly: !discovery.Capabilities.CanEdit, ReadOnlyReason: discovery.Capabilities.ReadOnlyReason}, os.Getenv("RWM_FS_POLL") == "true")
 			if err == nil {
 				watcher.Start(context.Background())
-				configAPI := &api.ConfigAPI{Watcher: watcher, Auth: authentication}
+				var auditStore *audit.Store
+				if store, ok := emitter.(*audit.Store); ok {
+					auditStore = store
+				}
+				configAPI := &api.ConfigAPI{Watcher: watcher, Auth: authentication, Audit: emitter, History: &history.Service{Root: watcher.Tree().Root, StateDir: discovery.Config.StateDir, Audit: auditStore}}
 				resolver := func(id cfgsave.FileID) (string, error) {
 					for _, file := range watcher.Tree().Files {
 						if file.ID == string(id) || file.Path == string(id) {
@@ -69,19 +78,30 @@ func NewRouterWithAuth(version, commit string, logger *slog.Logger, discovery *d
 					}
 					return "", cfgsave.ErrManagedPath
 				}
-				configAPI.Save = cfgsave.New(cfgsave.Options{Root: watcher.Tree().Root, StateDir: discovery.Config.StateDir, EditEnabled: discovery.Config.EditEnabled, BackupKeep: 20, Resolve: resolver, Daemon: discovery.Client})
+				configAPI.Save = cfgsave.New(cfgsave.Options{Root: watcher.Tree().Root, StateDir: discovery.Config.StateDir, EditEnabled: discovery.Config.EditEnabled, BackupKeep: 20, Resolve: resolver, Daemon: discovery.Client, Audit: emitter})
 				apiRoot := chi.NewRouter()
 				apiRoot.Mount("/", configAPI.Routes())
+				if store := authentication.StorePtr(); store != nil && emitter != nil {
+					sessionsAPI := &api.SessionsAPI{Store: store, Audit: emitter, Auth: authentication}
+					apiRoot.Mount("/sessions", authentication.RequireRole("admin")(sessionsAPI.Routes()))
+				}
+				if store, ok := emitter.(*audit.Store); ok {
+					auditAPI := &api.AuditAPI{Store: store, Auth: authentication}
+					apiRoot.Mount("/audit", authentication.RequireRole("viewer")(auditAPI.Routes()))
+				}
 				if discovery.Config.GitEnabled != "false" {
 					timeout, timeoutErr := time.ParseDuration(discovery.Config.GitTimeout)
 					if timeoutErr == nil {
 						gitRepo, gitRunner, detectErr := gitx.Detect(context.Background(), filepath.Dir(watcher.Tree().Root), discovery.Config.GitRepo, gitx.Options{Bin: discovery.Config.GitBin, StateDir: discovery.Config.StateDir, Timeout: timeout, AllowHooks: discovery.Config.GitAllowHooks, Remote: discovery.Config.GitRemote, Username: discovery.Config.GitUsername, Token: discovery.Config.GitToken, SSHKeyFile: discovery.Config.GitSSHKeyFile, KnownHosts: discovery.Config.GitSSHKnownHostsFile, AcceptNew: discovery.Config.GitSSHInsecureAcceptNew})
 						if detectErr == nil && gitRunner != nil && gitRepo.Enabled {
+							if configAPI.History != nil {
+								configAPI.History.Git = gitRunner
+							}
 							gitSync := gitx.NewSync(gitRunner, discovery.Config.GitRemote)
 							if pollInterval, pollErr := time.ParseDuration(discovery.Config.GitPollInterval); pollErr == nil {
 								gitSync.Start(context.Background(), pollInterval)
 							}
-							gitAPI := &api.GitAPI{Git: gitRunner, Repo: gitRepo, Watcher: watcher, Auth: authentication, Audit: audit.SlogSink{Logger: logger}, Sync: gitSync, Remote: discovery.Config.GitRemote, PullAllow: strings.Split(discovery.Config.GitPullAllowStrategies, ","), PushBranches: strings.Split(discovery.Config.GitPushBranches, ","), AutoApplyPull: discovery.Config.GitAutoApplyPull, Options: gitx.CommitOptions{CommitterName: discovery.Config.GitAuthorName, CommitterEmail: discovery.Config.GitAuthorEmail, AuthorDomain: discovery.Config.GitAuthorDomain, ExpectedBranch: discovery.Config.GitBranch, SecretGuard: discovery.Config.GitSecretGuard, DenyGlobs: strings.Split(discovery.Config.GitDenyGlobs, ",")}}
+							gitAPI := &api.GitAPI{Git: gitRunner, Repo: gitRepo, Watcher: watcher, Auth: authentication, Audit: emitter, Sync: gitSync, Remote: discovery.Config.GitRemote, PullAllow: strings.Split(discovery.Config.GitPullAllowStrategies, ","), PushBranches: strings.Split(discovery.Config.GitPushBranches, ","), AutoApplyPull: discovery.Config.GitAutoApplyPull, Options: gitx.CommitOptions{CommitterName: discovery.Config.GitAuthorName, CommitterEmail: discovery.Config.GitAuthorEmail, AuthorDomain: discovery.Config.GitAuthorDomain, ExpectedBranch: discovery.Config.GitBranch, SecretGuard: discovery.Config.GitSecretGuard, DenyGlobs: strings.Split(discovery.Config.GitDenyGlobs, ",")}}
 							apiRoot.Mount("/git", gitAPI.Routes())
 						}
 					}
@@ -89,7 +109,7 @@ func NewRouterWithAuth(version, commit string, logger *slog.Logger, discovery *d
 				r.Mount("/manager/api", authentication.RequireRole("viewer")(apiRoot))
 				if raw, schemaErr := (runwispbin.Runner{Binary: discovery.Config.RunWispBin}).Schema(context.Background()); schemaErr == nil {
 					if document, loadErr := schema.Load(raw, discovery.Config.StateDir, "", discovery.Capabilities.BinaryVersion); loadErr == nil {
-						configAPI.Save = cfgsave.New(cfgsave.Options{Root: watcher.Tree().Root, StateDir: discovery.Config.StateDir, EditEnabled: discovery.Config.EditEnabled, BackupKeep: 20, Resolve: resolver, Daemon: discovery.Client, Validator: func(ctx context.Context, candidates []validate.Candidate) (validate.Result, error) {
+						configAPI.Save = cfgsave.New(cfgsave.Options{Root: watcher.Tree().Root, StateDir: discovery.Config.StateDir, EditEnabled: discovery.Config.EditEnabled, BackupKeep: 20, Resolve: resolver, Daemon: discovery.Client, Audit: emitter, Validator: func(ctx context.Context, candidates []validate.Candidate) (validate.Result, error) {
 							return validate.Validate(ctx, validate.Options{Schema: document, Binary: runwispbin.Runner{Binary: discovery.Config.RunWispBin}, Root: watcher.Tree().Root, StateDir: discovery.Config.StateDir, DaemonPID: discovery.Capabilities.DaemonPID}, candidates)
 						}})
 						validationAPI := api.NewValidationAPI(document, watcher, discovery.Config.RunWispBin, discovery.Config.StateDir)
@@ -111,7 +131,7 @@ func NewRouterWithAuth(version, commit string, logger *slog.Logger, discovery *d
 		if discovery.Config.Landing == "manager" {
 			r.Get("/", func(w http.ResponseWriter, req *http.Request) { http.Redirect(w, req, "/manager/", http.StatusFound) })
 		}
-		r.Handle("/*", proxy.New(discovery.Client, authentication, discovery.Config, logger))
+		r.Handle("/*", proxy.NewWithAudit(discovery.Client, authentication, discovery.Config, logger, emitter))
 	}
 	return r
 }
@@ -130,6 +150,11 @@ func ServeWithDiscovery(address, version, commit string, logger *slog.Logger, di
 func ServeWithAuth(address, version, commit string, logger *slog.Logger, discovery *daemon.Discovery, networks []*net.IPNet, authentication *auth.Authenticator) error {
 	logger.Info("starting manager", "address", address, "version", version, "commit", commit)
 	return http.ListenAndServe(address, NewRouterWithAuth(version, commit, logger, discovery, networks, authentication))
+}
+
+func ServeWithAuthAudit(address, version, commit string, logger *slog.Logger, discovery *daemon.Discovery, networks []*net.IPNet, authentication *auth.Authenticator, emitter audit.Emitter) error {
+	logger.Info("starting manager", "address", address, "version", version, "commit", commit)
+	return http.ListenAndServe(address, NewRouterWithAuthAudit(version, commit, logger, discovery, networks, authentication, emitter))
 }
 
 func health(version, commit string) http.HandlerFunc {

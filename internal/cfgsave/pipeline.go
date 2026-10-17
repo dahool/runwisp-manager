@@ -249,7 +249,7 @@ func (p *Pipeline) authorize(ctx context.Context, change Change) error {
 	if !p.opts.EditEnabled {
 		return ErrEditDisabled
 	}
-	if len(change.Raw) > 0 && p.opts.Actor.Role != "admin" {
+	if len(change.Raw) > 0 && p.opts.Actor.Role != "admin" && !change.Rollback {
 		return ErrUnauthorized
 	}
 	if p.opts.Authorize != nil {

@@ -35,6 +35,7 @@ func NewAuthenticator(c config.Config, store *Store, provider *Provider) *Authen
 }
 
 func (a *Authenticator) SetAudit(emitter audit.Emitter) { a.Audit = emitter }
+func (a *Authenticator) StorePtr() *Store               { return a.Store }
 
 func (a *Authenticator) Routes() http.Handler {
 	mux := http.NewServeMux()
@@ -136,7 +137,7 @@ func (a *Authenticator) callback(w http.ResponseWriter, r *http.Request) {
 	}
 	flow, err := a.Store.ConsumeFlow(r.Context(), state)
 	if err != nil {
-		a.emit(r, audit.Event{Action: "login_denied", RemoteIP: r.RemoteAddr, Success: false, Reason: "invalid state"})
+		a.emit(r, audit.Event{Action: "auth.denied", RemoteIP: r.RemoteAddr, Outcome: "denied", Success: false, Reason: "invalid state"})
 		browserError(w, http.StatusForbidden, "invalid or expired login state")
 		return
 	}
@@ -146,13 +147,13 @@ func (a *Authenticator) callback(w http.ResponseWriter, r *http.Request) {
 	}
 	claims, hint, err := a.Provider.Exchange(r.Context(), r.URL.Query().Get("code"), flow.CodeVerifier, flow.Nonce)
 	if err != nil {
-		a.emit(r, audit.Event{Action: "login_denied", RemoteIP: r.RemoteAddr, Success: false, Reason: "token verification failed"})
+		a.emit(r, audit.Event{Action: "auth.denied", RemoteIP: r.RemoteAddr, Outcome: "denied", Success: false, Reason: "token verification failed"})
 		browserError(w, http.StatusForbidden, "login could not be verified")
 		return
 	}
 	identity, err := ResolveIdentity(a.Config, claims)
 	if err != nil {
-		a.emit(r, audit.Event{Action: "login_denied", Subject: identity.Sub, Username: identity.Username, RemoteIP: r.RemoteAddr, Success: false, Reason: "identity denied"})
+		a.emit(r, audit.Event{Action: "auth.denied", Subject: identity.Sub, Username: identity.Username, RemoteIP: r.RemoteAddr, Outcome: "denied", Success: false, Reason: "identity denied"})
 		browserError(w, http.StatusForbidden, "login was denied")
 		return
 	}
@@ -164,7 +165,7 @@ func (a *Authenticator) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setSessionCookie(w, a.Config, sessionID, ttl)
-	a.emit(r, audit.Event{Action: "login", Subject: identity.Sub, Username: identity.Username, Role: identity.Role, RemoteIP: r.RemoteAddr, Success: true})
+	a.emit(r, audit.Event{Action: "auth.login", Subject: identity.Sub, Username: identity.Username, Role: identity.Role, RemoteIP: r.RemoteAddr, Outcome: "ok", Success: true})
 	http.SetCookie(w, &http.Cookie{Name: "rwm_oidc_flow", Value: "", Path: "/manager/auth", HttpOnly: true, MaxAge: -1})
 	http.Redirect(w, r, flow.ReturnTo, http.StatusFound)
 }
@@ -182,7 +183,7 @@ func (a *Authenticator) logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(sessionCookieName(a.Config)); err == nil && a.Store != nil {
 		_ = a.Store.DeleteSession(r.Context(), cookie.Value)
 	}
-	a.emit(r, audit.Event{Action: "logout", Subject: session.Sub, Username: session.Username, Role: session.Role, RemoteIP: r.RemoteAddr, Success: true})
+	a.emit(r, audit.Event{Action: "auth.logout", Subject: session.Sub, Username: session.Username, Role: session.Role, RemoteIP: r.RemoteAddr, Outcome: "ok", Success: true})
 	clearSessionCookie(w, a.Config)
 	if a.Provider != nil && a.Provider.EndSessionURL != "" {
 		target, _ := url.Parse(a.Provider.EndSessionURL)

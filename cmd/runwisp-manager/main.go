@@ -147,6 +147,7 @@ func run(args []string) error {
 	}
 	var provider *auth.Provider
 	var store *auth.Store
+	var auditStore *audit.Store
 	if c.AuthMode == "oidc" {
 		provider, err = auth.Discover(context.Background(), c)
 		if err != nil {
@@ -159,7 +160,17 @@ func run(args []string) error {
 		defer store.Close()
 		go store.Janitor(context.Background(), 5*time.Minute)
 	}
+	if store != nil {
+		auditStore, err = audit.OpenStoreDB(context.Background(), store.DB())
+	} else {
+		auditStore, err = audit.OpenStore(context.Background(), c.StateDir)
+	}
+	if err != nil {
+		return err
+	}
+	defer auditStore.Close()
+	auditStore.SetMirror(func(event audit.Event) { audit.SlogSink{Logger: logger}.Emit(context.Background(), event) })
 	authentication := auth.NewAuthenticator(c, store, provider)
-	authentication.SetAudit(audit.SlogSink{Logger: logger})
-	return httpx.ServeWithAuth(address, version, commit, logger, discovery, networks, authentication)
+	authentication.SetAudit(auditStore)
+	return httpx.ServeWithAuthAudit(address, version, commit, logger, discovery, networks, authentication, auditStore)
 }
