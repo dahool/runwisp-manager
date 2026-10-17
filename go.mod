@@ -4,6 +4,9 @@ go 1.27.0
 
 require (
 	github.com/go-chi/chi/v5 v5.2.3
+	github.com/fsnotify/fsnotify v1.9.0
+	github.com/bmatcuk/doublestar/v4 v4.9.1
+	github.com/pelletier/go-toml/v2 v2.2.4
 	golang.org/x/oauth2 v0.37.0
 	modernc.org/sqlite v1.60.1
 )

@@ -7,7 +7,7 @@
 
 	const groups = [
 		{ label: 'RunWisp', external: true, items: [{ label: 'Dashboard', href: '/' }, { label: 'Runs', href: '/runs' }, { label: 'Notifications', href: '/notifications' }] },
-		{ label: 'Manage', items: [{ label: 'Tasks', href: '/manager/tasks' }, { label: 'Settings', href: '/manager/settings' }, { label: 'Git', href: '/manager/git' }, { label: 'Audit', href: '/manager/audit' }] }
+			{ label: 'Manage', items: [{ label: 'Tasks', href: '/manager/tasks' }, { label: 'Services', href: '/manager/services' }, { label: 'Settings', href: '/manager/settings/files' }, { label: 'Git', href: '/manager/git' }, { label: 'Audit', href: '/manager/audit' }] }
 	];
 	let mobileOpen = $state(false);
 </script>

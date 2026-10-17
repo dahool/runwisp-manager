@@ -1,5 +1,49 @@
 <!doctype html>
 <html lang="en">
-  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RunWisp Manager</title></head>
-  <body><div id="svelte">RunWisp Manager</div></body>
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta http-equiv="content-security-policy" content="script-src 'self' 'sha256-zuPM9j7KsOGo/Kx4t86lX/xKpflg5VnQdqXKR5MsWEQ='; style-src 'self' 'unsafe-inline'">
+		<link href="/manager/_app/immutable/entry/start.DcqE8fTu.js" rel="modulepreload">
+		<link href="/manager/_app/immutable/chunks/DOMg7r8g.js" rel="modulepreload">
+		<link href="/manager/_app/immutable/chunks/DuR4SUx4.js" rel="modulepreload">
+		<link href="/manager/_app/immutable/entry/app.DKu5ZwyG.js" rel="modulepreload">
+		<link href="/manager/_app/immutable/chunks/C6cPPygV.js" rel="modulepreload">
+		<link href="/manager/_app/immutable/chunks/Ce1QSFTN.js" rel="modulepreload">
+		<link href="/manager/_app/immutable/chunks/DBq8LF82.js" rel="modulepreload">
+		<link href="/manager/_app/immutable/nodes/0.Ly5tLwcy.js" rel="modulepreload">
+		<link href="/manager/_app/immutable/chunks/BXF7nePN.js" rel="modulepreload">
+		<link href="/manager/_app/immutable/chunks/Brq_aYz6.js" rel="modulepreload">
+		<link href="/manager/_app/immutable/chunks/C4WWrGMl.js" rel="modulepreload">
+
+		<link href="/manager/_app/immutable/assets/0.DTa4qxZl.css" rel="stylesheet">
+		<script>
+			(() => {
+				const theme = localStorage.getItem('runwisp:theme') || 'auto';
+				const dark = theme === 'dark' || (theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+				document.documentElement.classList.toggle('dark', dark);
+			})();
+		</script>
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">
+			<script>
+				{
+					__sveltekit_vcbemw = {
+						base: "/manager",
+						assets: "/manager"
+					};
+
+					const element = document.currentScript.parentElement;
+
+					Promise.all([
+						import("/manager/_app/immutable/entry/start.DcqE8fTu.js"),
+						import("/manager/_app/immutable/entry/app.DKu5ZwyG.js")
+					]).then(([kit, app]) => {
+						kit.start(app, element);
+					});
+				}
+			</script>
+		</div>
+	</body>
 </html>

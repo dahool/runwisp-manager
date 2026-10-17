@@ -1,0 +1,12 @@
+{
+  "openapi": "3.0.3",
+  "info": {"title": "RunWisp Manager read model", "version": "phase-05"},
+  "paths": {
+    "/manager/api/config/tree": {"get": {"responses": {"200": {"description": "Configuration tree"}}}},
+    "/manager/api/config/files/{id}": {"get": {"responses": {"200": {"description": "File metadata"}, "403": {"description": "Admin required for raw content"}}}},
+    "/manager/api/units": {"get": {"responses": {"200": {"description": "Unit list"}}}},
+    "/manager/api/units/{kind}/{name}": {"get": {"responses": {"200": {"description": "Unit detail"}}}},
+    "/manager/api/config/secrets:reveal": {"post": {"responses": {"200": {"description": "Admin-only secret reveal"}}}},
+    "/manager/api/config/events": {"get": {"responses": {"200": {"description": "Configuration SSE"}}}}
+  }
+}

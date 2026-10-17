@@ -9,11 +9,14 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/runwisp/runwisp-manager/internal/api"
 	"github.com/runwisp/runwisp-manager/internal/auth"
+	"github.com/runwisp/runwisp-manager/internal/cfgtree"
 	"github.com/runwisp/runwisp-manager/internal/daemon"
 	"github.com/runwisp/runwisp-manager/internal/proxy"
 	"github.com/runwisp/runwisp-manager/internal/ui"
@@ -43,6 +46,15 @@ func NewRouterWithAuth(version, commit string, logger *slog.Logger, discovery *d
 	r.Method(http.MethodGet, "/manager/api/status", status)
 	r.Get("/manager/readyz", readyHandler(discovery))
 	if authentication != nil {
+		if discovery != nil && discovery.Capabilities.ConfigPath != "" {
+			watcher, err := cfgtree.NewWatcher(cfgtree.Options{Root: discovery.Capabilities.ConfigPath, ReadOnly: !discovery.Capabilities.CanEdit, ReadOnlyReason: discovery.Capabilities.ReadOnlyReason}, os.Getenv("RWM_FS_POLL") == "true")
+			if err == nil {
+				watcher.Start(context.Background())
+				configAPI := &api.ConfigAPI{Watcher: watcher, Auth: authentication}
+				viewer := authentication.RequireRole("viewer")(configAPI.Routes())
+				r.Mount("/manager/api", viewer)
+			}
+		}
 		r.Mount("/manager", authentication.Routes())
 		if discovery != nil {
 			r.Get("/manager/bridge.js", ui.BridgeHandler(discovery.Config))
