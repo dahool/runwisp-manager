@@ -6,13 +6,14 @@ WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
-RUN bun run build
+RUN npm run build
 
 FROM golang:1.27.0-bookworm AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
-COPY . .
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
 COPY --from=web /src/web/build ./internal/ui/dist
 ARG VERSION=dev
 ARG COMMIT=none

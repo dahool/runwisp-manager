@@ -80,6 +80,11 @@ func NewRouterWithAuthAudit(version, commit string, logger *slog.Logger, discove
 				}
 				configAPI.Save = cfgsave.New(cfgsave.Options{Root: watcher.Tree().Root, StateDir: discovery.Config.StateDir, EditEnabled: discovery.Config.EditEnabled, BackupKeep: 20, Resolve: resolver, Daemon: discovery.Client, Audit: emitter})
 				apiRoot := chi.NewRouter()
+				authRoutes := authentication.Routes()
+				apiRoot.Handle("/me", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+					req.URL.Path = "/api/me"
+					authRoutes.ServeHTTP(w, req)
+				}))
 				apiRoot.Mount("/", configAPI.Routes())
 				if store := authentication.StorePtr(); store != nil && emitter != nil {
 					sessionsAPI := &api.SessionsAPI{Store: store, Audit: emitter, Auth: authentication}
@@ -121,12 +126,27 @@ func NewRouterWithAuthAudit(version, commit string, logger *slog.Logger, discove
 				}
 			}
 		}
-		r.Mount("/manager", authentication.Routes())
 		if discovery != nil {
 			r.Get("/manager/bridge.js", ui.BridgeHandler(discovery.Config))
 		}
 	}
-	r.Mount("/manager", http.StripPrefix("/manager", ui.Handler()))
+	uiHandler := http.StripPrefix("/manager", ui.Handler())
+	if authentication != nil {
+		authRoutes := authentication.Routes()
+		fallbackUI := uiHandler
+		uiHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if strings.HasPrefix(req.URL.Path, "/manager/auth/") {
+				routedRequest := req.Clone(req.Context())
+				routedURL := *req.URL
+				routedURL.Path = strings.TrimPrefix(req.URL.Path, "/manager")
+				routedRequest.URL = &routedURL
+				authRoutes.ServeHTTP(w, routedRequest)
+				return
+			}
+			fallbackUI.ServeHTTP(w, req)
+		})
+	}
+	r.Mount("/manager", uiHandler)
 	if authentication != nil && discovery != nil {
 		if discovery.Config.Landing == "manager" {
 			r.Get("/", func(w http.ResponseWriter, req *http.Request) { http.Redirect(w, req, "/manager/", http.StatusFound) })

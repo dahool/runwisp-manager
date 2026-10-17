@@ -145,7 +145,10 @@ func (p *Provider) VerifyIDToken(ctx context.Context, raw, nonce string) (Claims
 		}
 		return json.Unmarshal(data, out)
 	}
-	var header struct{ Algorithm, KeyID string }
+	var header struct {
+		Algorithm string `json:"alg"`
+		KeyID     string `json:"kid"`
+	}
 	var claims Claims
 	if err := decode(parts[0], &header); err != nil {
 		return nil, errors.New("invalid oidc id token header")

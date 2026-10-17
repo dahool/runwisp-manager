@@ -4,13 +4,7 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		%sveltekit.head%
-		<script>
-			(() => {
-				const theme = localStorage.getItem('runwisp:theme') || 'auto';
-				const dark = theme === 'dark' || (theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
-				document.documentElement.classList.toggle('dark', dark);
-			})();
-		</script>
+		<script src="%sveltekit.assets%/theme.js" defer></script>
 	</head>
 	<body data-sveltekit-preload-data="hover">
 		<div style="display: contents">%sveltekit.body%</div>

@@ -4,6 +4,7 @@ package ui
 import (
 	"embed"
 	"io/fs"
+	"mime"
 	"net/http"
 	"path"
 	"strings"
@@ -22,7 +23,7 @@ func Handler() http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
-		if name == "." || name == "" {
+		if name == "." || name == "" || name == "/" {
 			name = "index.html"
 		}
 		if strings.HasPrefix(name, "api/") {
@@ -54,7 +55,9 @@ func serveAsset(w http.ResponseWriter, root fs.FS, name string) {
 		http.NotFound(w, nil)
 		return
 	}
-	if contentType := http.DetectContentType(data); contentType != "" {
+	if contentType := mime.TypeByExtension(path.Ext(name)); contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	} else if contentType := http.DetectContentType(data); contentType != "" {
 		w.Header().Set("Content-Type", contentType)
 	}
 	w.Header().Set("Last-Modified", time.Now().UTC().Format(http.TimeFormat))

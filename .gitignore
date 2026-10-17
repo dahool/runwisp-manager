@@ -5,3 +5,6 @@
 /web/test-results/
 /web/playwright-report/
 *.log
+/docs/plan
+/internal/ui/dist/*
+!/internal/ui/dist/.gitkeep
