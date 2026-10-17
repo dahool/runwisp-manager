@@ -17,7 +17,7 @@ starting and completing each task, and must commit the completed phase.
 | --- | --- | --- | --- |
 | 01 | Go binary serving RunWisp-identical empty shell | Not started | — |
 | 02 | Env config, daemon client, discovery, version check | Complete | 96beec4aad9e6250cd830b19df7f607c2cbfdfab |
-| 03 | OIDC login, sessions, roles, CSRF | Complete | aa9a768 |
+| 03 | OIDC login, sessions, roles, CSRF | Complete | 25f2930 |
 | 04 | Authenticated reverse proxy and bridge | Not started | — |
 | 05 | Multi-file config index and read model | Not started | — |
 | 06 | Comment-preserving TOML editing library | Blocked: document missing | — |
