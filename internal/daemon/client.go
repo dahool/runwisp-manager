@@ -75,11 +75,32 @@ type HTTPClient struct {
 	token      string
 	loggedIn   time.Time
 	readOnly   bool
+	authOff    bool
 	retryAfter time.Time
 }
 type UnixClient struct {
 	base   *url.URL
 	client *http.Client
+}
+
+// authenticatedRoundTripper applies the daemon's own bearer token to
+// reverse-proxied requests. Browser credentials authenticate manager users,
+// not a remotely configured RunWisp daemon.
+type authenticatedRoundTripper struct{ client *HTTPClient }
+
+func (t authenticatedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if err := t.client.loginIfNeeded(req.Context()); err != nil {
+		return nil, err
+	}
+	t.client.mu.Lock()
+	token := t.client.token
+	t.client.mu.Unlock()
+	proxied := req.Clone(req.Context())
+	proxied.Header = req.Header.Clone()
+	if token != "" {
+		proxied.Header.Set("Authorization", "Bearer "+token)
+	}
+	return t.client.client.Transport.RoundTrip(proxied)
 }
 
 func New(c config.Config, logger *slog.Logger) (Client, error) {
@@ -124,7 +145,7 @@ func (c *UnixClient) Transport() Transport            { return TransportUnix }
 func (c *UnixClient) RoundTripper() http.RoundTripper { return c.client.Transport }
 func (c *UnixClient) BaseURL() *url.URL               { return c.base }
 func (c *HTTPClient) Transport() Transport            { return TransportHTTP }
-func (c *HTTPClient) RoundTripper() http.RoundTripper { return c.client.Transport }
+func (c *HTTPClient) RoundTripper() http.RoundTripper { return authenticatedRoundTripper{client: c} }
 func (c *HTTPClient) BaseURL() *url.URL               { return c.base }
 func (c *UnixClient) Info(ctx context.Context) (DaemonInfo, error) {
 	var out DaemonInfo
@@ -181,7 +202,20 @@ var errUnauthorized = errors.New("daemon returned unauthorized")
 func (c *HTTPClient) loginIfNeeded(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.authOff {
+		return nil
+	}
 	if c.token != "" && time.Since(c.loggedIn) < 23*time.Hour {
+		return nil
+	}
+	// The status endpoint is public and reports whether daemon authentication
+	// is required. Avoid the CHAP challenge/login flow when the daemon has
+	// RUNWISP_AUTH=off; those endpoints may be unavailable in that mode.
+	var status struct {
+		AuthRequired *bool `json:"authRequired"`
+	}
+	if err := doJSON(ctx, c.client, c.base, http.MethodGet, "/api/auth/status", nil, &status, ""); err == nil && status.AuthRequired != nil && !*status.AuthRequired {
+		c.authOff = true
 		return nil
 	}
 	var challenge struct {
@@ -233,13 +267,6 @@ func doJSON(ctx context.Context, client *http.Client, base *url.URL, method, pat
 	}
 	if resp.StatusCode == http.StatusTooManyRequests {
 		wait := parseRetryAfter(resp.Header.Get("Retry-After"))
-		if wait > 0 {
-			select {
-			case <-time.After(wait):
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		}
 		return fmt.Errorf("daemon rate limited: retry after %s", wait)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

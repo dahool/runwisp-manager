@@ -21,13 +21,14 @@ import (
 type contextKey struct{}
 
 type Authenticator struct {
-	Config   config.Config
-	Store    *Store
-	Provider *Provider
-	Disabled bool
-	Audit    audit.Emitter
-	mu       sync.Mutex
-	attempts map[string][]time.Time
+	Config    config.Config
+	Store     *Store
+	Provider  *Provider
+	Disabled  bool
+	Audit     audit.Emitter
+	mu        sync.Mutex
+	attempts  map[string][]time.Time
+	lastSweep time.Time
 }
 
 func NewAuthenticator(c config.Config, store *Store, provider *Provider) *Authenticator {
@@ -159,6 +160,21 @@ func (a *Authenticator) callback(w http.ResponseWriter, r *http.Request) {
 	}
 	ttl, _ := time.ParseDuration(a.Config.SessionTTL)
 	now := time.Now()
+	if now.Sub(a.lastSweep) >= time.Minute {
+		for ip, values := range a.attempts {
+			alive := false
+			for _, at := range values {
+				if at.After(now.Add(-time.Minute)) {
+					alive = true
+					break
+				}
+			}
+			if !alive {
+				delete(a.attempts, ip)
+			}
+		}
+		a.lastSweep = now
+	}
 	sessionID, err := a.Store.CreateSession(r.Context(), Session{Sub: identity.Sub, Username: identity.Username, Name: identity.Name, Email: identity.Email, Role: identity.Role, Groups: identity.Groups, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(ttl), IP: r.RemoteAddr, UserAgent: r.UserAgent(), IDTokenHint: hint})
 	if err != nil {
 		browserError(w, http.StatusInternalServerError, "could not create session")
@@ -247,17 +263,20 @@ func (a *Authenticator) allow(remote string) bool {
 	defer a.mu.Unlock()
 	now := time.Now()
 	cutoff := now.Add(-time.Minute)
-	attempts := a.attempts[remote][:0]
-	for _, at := range attempts {
+	var kept []time.Time
+	for _, at := range a.attempts[remote] { // range over the original slice, not a resliced copy
 		if at.After(cutoff) {
-			attempts = append(attempts, at)
+			kept = append(kept, at)
 		}
 	}
-	if len(attempts) >= 20 {
-		a.attempts[remote] = attempts
+	if len(kept) >= 20 {
+		a.attempts[remote] = kept
 		return false
 	}
-	a.attempts[remote] = append(attempts, now)
+	if len(kept) == 0 {
+		delete(a.attempts, remote) // evict stale entries to bound map growth
+	}
+	a.attempts[remote] = append(kept, now)
 	return true
 }
 

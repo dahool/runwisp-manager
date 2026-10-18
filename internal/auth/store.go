@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -62,9 +63,12 @@ type Flow struct {
 }
 
 type Store struct {
-	db     *sql.DB
-	secret []byte
-	now    func() time.Time
+	db         *sql.DB
+	secret     []byte
+	now        func() time.Time
+	keyOnce    sync.Once
+	derivedKey []byte
+	keyErr     error
 }
 
 func OpenStore(ctx context.Context, stateDir string, secret []byte) (*Store, error) {
@@ -113,15 +117,16 @@ func (s *Store) ConsumeFlow(ctx context.Context, state string) (Flow, error) {
 	if err != nil {
 		return Flow{}, fmt.Errorf("load oidc flow: %w", err)
 	}
+	flow.State, flow.ExpiresAt = state, time.Unix(expiry, 0)
+	// Check expiry before deleting: an expired flow should not be consumed.
+	if !s.now().Before(flow.ExpiresAt) {
+		return Flow{}, errors.New("oidc flow expired")
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM oidc_flows WHERE state=?`, state); err != nil {
 		return Flow{}, fmt.Errorf("consume oidc flow: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return Flow{}, fmt.Errorf("commit oidc flow: %w", err)
-	}
-	flow.State, flow.ExpiresAt = state, time.Unix(expiry, 0)
-	if !s.now().Before(flow.ExpiresAt) {
-		return Flow{}, errors.New("oidc flow expired")
 	}
 	return flow, nil
 }
@@ -210,7 +215,7 @@ func (s *Store) ListSessions(ctx context.Context) ([]SessionInfo, error) {
 	return out, rows.Err()
 }
 func (s *Store) RevokeSessionHash(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE hex(id_hash)=?`, id)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE hex(id_hash)=? COLLATE NOCASE`, id)
 	return err
 }
 
@@ -235,11 +240,13 @@ func (s *Store) hash(id string) []byte {
 }
 
 func (s *Store) key() ([]byte, error) {
-	reader, err := hkdf.Key(sha256.New, s.secret, nil, "runwisp-manager session id token hint", 32)
-	if err != nil {
-		return nil, fmt.Errorf("derive hint key: %w", err)
-	}
-	return reader, nil
+	s.keyOnce.Do(func() {
+		s.derivedKey, s.keyErr = hkdf.Key(sha256.New, s.secret, nil, "runwisp-manager session id token hint", 32)
+		if s.keyErr != nil {
+			s.keyErr = fmt.Errorf("derive hint key: %w", s.keyErr)
+		}
+	})
+	return s.derivedKey, s.keyErr
 }
 
 func (s *Store) encrypt(value string) ([]byte, error) {

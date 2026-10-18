@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -160,9 +159,9 @@ func atomicWrite(path string, data []byte) error {
 		_ = tmp.Close()
 		return err
 	}
-	if err := os.Chown(tmpName, int(info.Sys().(*syscall.Stat_t).Uid), int(info.Sys().(*syscall.Stat_t).Gid)); err != nil {
+	if err := preserveOwnership(tmpName, info); err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("preserve target ownership: %w", err)
+		return err
 	}
 	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()

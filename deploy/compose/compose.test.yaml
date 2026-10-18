@@ -70,10 +70,11 @@ services:
       oidc-ready:
         condition: service_completed_successfully
     ports:
-      - "127.0.0.1:9478:9478"
+      - "9478:9478"
     extra_hosts:
       - "oidc.localtest.me:host-gateway"
     environment:
+      RWM_RUNWISP_URL: http://runwisp:9477
       RWM_EXTERNAL_URL: http://localhost:9478
       RWM_LANDING: manager
       RWM_STATE_DIR: /var/lib/runwisp-manager

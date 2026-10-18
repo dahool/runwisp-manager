@@ -17,14 +17,15 @@ type Event struct {
 }
 
 type Watcher struct {
-	options Options
-	poll    bool
-	events  chan Event
-	mu      sync.RWMutex
-	tree    Tree
-	stop    chan struct{}
-	done    chan struct{}
-	close   sync.Once
+	options     Options
+	poll        bool
+	events      chan Event
+	subscribers map[chan Event]struct{}
+	mu          sync.RWMutex
+	tree        Tree
+	stop        chan struct{}
+	done        chan struct{}
+	close       sync.Once
 }
 
 func NewWatcher(options Options, poll bool) (*Watcher, error) {
@@ -33,12 +34,30 @@ func NewWatcher(options Options, poll bool) (*Watcher, error) {
 		return nil, err
 	}
 	tree = Index(tree)
-	w := &Watcher{options: options, poll: poll, events: make(chan Event, 16), tree: tree, stop: make(chan struct{}), done: make(chan struct{})}
+	w := &Watcher{options: options, poll: poll, events: make(chan Event, 16), subscribers: make(map[chan Event]struct{}), tree: tree, stop: make(chan struct{}), done: make(chan struct{})}
 	return w, nil
 }
 
 func (w *Watcher) Tree() Tree           { w.mu.RLock(); defer w.mu.RUnlock(); return cloneTree(w.tree) }
 func (w *Watcher) Events() <-chan Event { return w.events }
+
+// Subscribe returns a private event stream for one connected client.
+func (w *Watcher) Subscribe(ctx context.Context) <-chan Event {
+	ch := make(chan Event, 16)
+	w.mu.Lock()
+	w.subscribers[ch] = struct{}{}
+	w.mu.Unlock()
+	go func() {
+		<-ctx.Done()
+		w.mu.Lock()
+		if _, ok := w.subscribers[ch]; ok {
+			delete(w.subscribers, ch)
+			close(ch)
+		}
+		w.mu.Unlock()
+	}()
+	return ch
+}
 
 func (w *Watcher) Start(ctx context.Context) {
 	go func() {
@@ -51,7 +70,19 @@ func (w *Watcher) Start(ctx context.Context) {
 	}()
 }
 
-func (w *Watcher) Close() { w.close.Do(func() { close(w.stop); <-w.done; close(w.events) }) }
+func (w *Watcher) Close() {
+	w.close.Do(func() {
+		close(w.stop)
+		<-w.done
+		close(w.events)
+		w.mu.Lock()
+		for ch := range w.subscribers {
+			delete(w.subscribers, ch)
+			close(ch)
+		}
+		w.mu.Unlock()
+	})
+}
 
 func (w *Watcher) runPoll(ctx context.Context) {
 	ticker := time.NewTicker(2 * time.Second)
@@ -146,6 +177,14 @@ func (w *Watcher) emit(event Event) {
 	case w.events <- event:
 	default:
 	}
+	w.mu.Lock()
+	for ch := range w.subscribers {
+		select {
+		case ch <- event:
+		default:
+		}
+	}
+	w.mu.Unlock()
 }
 
 func changedFiles(before, after Tree) []string {

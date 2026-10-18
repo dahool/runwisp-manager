@@ -63,7 +63,11 @@ func RealIP(networks []*net.IPNet) func(http.Handler) http.Handler {
 			}
 			if trusted {
 				if forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0]); net.ParseIP(forwarded) != nil {
-					r.RemoteAddr = forwarded
+					_, port, err := net.SplitHostPort(r.RemoteAddr)
+					if err != nil {
+						port = "0"
+					}
+					r.RemoteAddr = net.JoinHostPort(forwarded, port)
 				}
 			}
 			next.ServeHTTP(w, r)

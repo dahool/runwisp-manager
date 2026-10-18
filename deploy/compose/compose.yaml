@@ -18,7 +18,7 @@ services:
       runwisp:
         condition: service_started
     ports:
-      - "127.0.0.1:9478:9478"
+      - "9478:9478"
     environment:
       RWM_EXTERNAL_URL: https://manager.example.com
       RWM_TRUSTED_PROXIES: 172.16.0.0/12

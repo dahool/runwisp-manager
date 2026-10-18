@@ -29,11 +29,22 @@ type Options struct {
 }
 
 type Pipeline struct {
-	opts        Options
-	lock        *Lock
-	idempotency sync.Mutex
-	results     map[string]Result
+	opts  Options
+	lock  *Lock
+	cache *idempotencyCache
 }
+
+type idempotencyCache struct {
+	mu      sync.Mutex
+	results map[string]cachedResult
+}
+type cachedResult struct {
+	result Result
+	at     time.Time
+}
+
+const idempotencyCacheTTL = 24 * time.Hour
+const idempotencyCacheLimit = 1024
 
 // WithSync serializes a repository operation with configuration saves. Git
 // sync callers use the same process and file lock as saves, so neither side
@@ -50,9 +61,31 @@ func (p *Pipeline) WithSync(ctx context.Context, fn func() error) error {
 	return fn()
 }
 
+func (p *Pipeline) cacheKey(key string) string {
+	return p.opts.Actor.Subject + "\x00" + p.opts.Actor.Username + "\x00" + key
+}
+func (p *Pipeline) cachedResult(key string) (Result, bool) {
+	p.cache.mu.Lock()
+	defer p.cache.mu.Unlock()
+	cacheKey := p.cacheKey(key)
+	for k, item := range p.cache.results {
+		if time.Since(item.at) > idempotencyCacheTTL {
+			delete(p.cache.results, k)
+		}
+	}
+	item, ok := p.cache.results[cacheKey]
+	return item.result, ok
+}
+
 func (p *Pipeline) Daemon() daemon.Client { return p.opts.Daemon }
 
 func (p *Pipeline) Backups(file string) ([]Backup, error) {
+	if p.opts.Resolve == nil {
+		return nil, ErrManagedPath
+	}
+	if _, err := p.opts.Resolve(FileID(file)); err != nil {
+		return nil, ErrManagedPath
+	}
 	return ListBackups(p.opts.StateDir, FileID(file))
 }
 
@@ -92,13 +125,14 @@ func New(opts Options) *Pipeline {
 	if opts.BackupKeep <= 0 {
 		opts.BackupKeep = 20
 	}
-	return &Pipeline{opts: opts, lock: &Lock{}, results: make(map[string]Result)}
+	return &Pipeline{opts: opts, lock: &Lock{}, cache: &idempotencyCache{results: make(map[string]cachedResult)}}
 }
 
 // WithActor returns a pipeline sharing configuration but using the supplied
-// identity for authorization and audit attribution.
+// identity for authorization and audit attribution. The shared cache is scoped
+// by actor so derived pipelines retain request deduplication without sharing results.
 func (p *Pipeline) WithActor(actor audit.Event) *Pipeline {
-	copy := &Pipeline{opts: p.opts, lock: p.lock, results: p.results}
+	copy := &Pipeline{opts: p.opts, lock: p.lock, cache: p.cache}
 	copy.opts.Actor = actor
 	return copy
 }
@@ -136,11 +170,9 @@ func (p *Pipeline) Save(ctx context.Context, change Change) (Result, error) {
 
 func (p *Pipeline) save(ctx context.Context, change Change) (Result, error) {
 	if change.IdempotencyKey != "" {
-		p.idempotency.Lock()
-		previous, ok := p.results[change.IdempotencyKey]
-		p.idempotency.Unlock()
+		item, ok := p.cachedResult(change.IdempotencyKey)
 		if ok {
-			return previous, nil
+			return item, nil
 		}
 	}
 	if err := p.authorize(ctx, change); err != nil {
@@ -154,6 +186,11 @@ func (p *Pipeline) save(ctx context.Context, change Change) (Result, error) {
 		return Result{}, err
 	}
 	defer unlock()
+	if change.IdempotencyKey != "" {
+		if previous, ok := p.cachedResult(change.IdempotencyKey); ok {
+			return previous, nil
+		}
+	}
 	files, err := currentFiles(change, p.opts.Resolve)
 	if err != nil {
 		return Result{}, err
@@ -222,9 +259,20 @@ func (p *Pipeline) save(ctx context.Context, change Change) (Result, error) {
 	_ = writeJournal(p.opts.StateDir, journal)
 	_ = removeJournal(p.opts.StateDir, journal.ID)
 	if change.IdempotencyKey != "" {
-		p.idempotency.Lock()
-		p.results[change.IdempotencyKey] = result
-		p.idempotency.Unlock()
+		key := p.cacheKey(change.IdempotencyKey)
+		p.cache.mu.Lock()
+		if len(p.cache.results) >= idempotencyCacheLimit {
+			var oldest string
+			var at time.Time
+			for k, item := range p.cache.results {
+				if oldest == "" || item.at.Before(at) {
+					oldest, at = k, item.at
+				}
+			}
+			delete(p.cache.results, oldest)
+		}
+		p.cache.results[key] = cachedResult{result: result, at: time.Now()}
+		p.cache.mu.Unlock()
 	}
 	return result, nil
 }

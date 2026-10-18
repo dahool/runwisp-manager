@@ -82,6 +82,9 @@ func New(options Options) (*Git, error) {
 		return nil, fmt.Errorf("create git state directory: %w", err)
 	}
 	if options.SSHKeyFile != "" {
+		if strings.ContainsAny(options.SSHKeyFile+options.KnownHosts, "\r\n\x00") {
+			return nil, errors.New("SSH paths contain invalid control characters")
+		}
 		info, err := os.Stat(options.SSHKeyFile)
 		if err != nil {
 			return nil, fmt.Errorf("stat SSH key: %w", err)

@@ -8,6 +8,15 @@ import (
 )
 
 func TestHandlerFallbackAndHeaders(t *testing.T) {
+	jsAsset := "/_app/immutable/entry/start.CQDYvKX1.js"
+	if matches, err := assets.ReadDir("dist/_app/immutable/entry"); err == nil {
+		for _, m := range matches {
+			if strings.HasSuffix(m.Name(), ".js") {
+				jsAsset = "/_app/immutable/entry/" + m.Name()
+				break
+			}
+		}
+	}
 	tests := []struct {
 		name, path, accept, contentType, cache string
 		status                                 int
@@ -16,7 +25,7 @@ func TestHandlerFallbackAndHeaders(t *testing.T) {
 		{"deep route", "/tasks/example", "text/html", "text/html", "no-cache", http.StatusOK},
 		{"dotted route", "/tasks/a.b", "text/html", "", "", http.StatusNotFound},
 		{"asset", "/_app/immutable/chunk.js", "*/*", "", "", http.StatusNotFound},
-		{"javascript asset", "/_app/immutable/entry/start.B361kHmS.js", "*/*", "text/javascript", "public, max-age=31536000, immutable", http.StatusOK},
+		{"javascript asset", jsAsset, "*/*", "text/javascript", "public, max-age=31536000, immutable", http.StatusOK},
 		{"stylesheet asset", "/_app/immutable/assets/0.DTa4qxZl.css", "*/*", "text/css", "public, max-age=31536000, immutable", http.StatusOK},
 		{"api", "/api/nope", "text/html", "application/problem+json", "", http.StatusNotFound},
 	}

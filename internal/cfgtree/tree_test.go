@@ -115,12 +115,20 @@ func TestDiscoverMalformedFileIsRetained(t *testing.T) {
 func TestPreviewIncludesRejectsEscapesAndReportsMissingMatches(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "one.toml"), []byte("# one\n"), 0o644); err != nil { t.Fatal(err) }
+	if err := os.WriteFile(filepath.Join(dir, "one.toml"), []byte("# one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	preview, err := PreviewIncludes(dir, []string{"*.toml", "missing/*.toml", "../outside/*.toml"})
-	if err != nil { t.Fatal(err) }
-	if len(preview.Matches) != 1 || preview.Matches[0] != filepath.Join(dir, "one.toml") { t.Fatalf("matches = %#v", preview.Matches) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(preview.Matches) != 1 || preview.Matches[0] != filepath.Join(dir, "one.toml") {
+		t.Fatalf("matches = %#v", preview.Matches)
+	}
 	joined := strings.Join(preview.Warnings, "\n")
-	if !strings.Contains(joined, "matched no files") || !strings.Contains(joined, "outside managed area") { t.Fatalf("warnings = %q", joined) }
+	if !strings.Contains(joined, "matched no files") || !strings.Contains(joined, "outside managed area") {
+		t.Fatalf("warnings = %q", joined)
+	}
 }
 
 func TestIndexUnitsLinesHashesAndDuplicates(t *testing.T) {

@@ -6,7 +6,7 @@
 	let { children } = $props();
 
 	const groups = [
-		{ label: 'RunWisp', external: true, items: [{ label: 'Dashboard', href: '/' }, { label: 'Runs', href: '/runs' }, { label: 'Notifications', href: '/notifications' }] },
+		{ label: 'RunWisp', external: true, items: [{ label: 'Dashboard', href: '/runwisp/' }, { label: 'Runs', href: '/runs' }, { label: 'Notifications', href: '/notifications' }] },
 			{ label: 'Manage', items: [{ label: 'Tasks', href: '/manager/tasks' }, { label: 'Services', href: '/manager/services' }, { label: 'Settings', href: '/manager/settings/files' }, { label: 'Git', href: '/manager/git' }, { label: 'Audit', href: '/manager/audit' }] }
 	];
 	let mobileOpen = $state(false);

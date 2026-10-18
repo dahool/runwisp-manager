@@ -2,17 +2,22 @@
 package ui
 
 import (
+	"crypto/sha256"
 	"embed"
+	"encoding/base64"
 	"io/fs"
 	"mime"
 	"net/http"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 )
 
 //go:embed all:dist
 var assets embed.FS
+
+var inlineScript = regexp.MustCompile(`(?is)<script([^>]*)>(.*?)</script\s*>`)
 
 // Handler serves the manager SPA under a router that has already stripped
 // /manager. It deliberately keeps API paths separate from the SPA fallback.
@@ -55,6 +60,9 @@ func serveAsset(w http.ResponseWriter, root fs.FS, name string) {
 		http.NotFound(w, nil)
 		return
 	}
+	if name == "index.html" {
+		addInlineScriptHashes(w.Header(), data)
+	}
 	if contentType := mime.TypeByExtension(path.Ext(name)); contentType != "" {
 		w.Header().Set("Content-Type", contentType)
 	} else if contentType := http.DetectContentType(data); contentType != "" {
@@ -63,6 +71,32 @@ func serveAsset(w http.ResponseWriter, root fs.FS, name string) {
 	w.Header().Set("Last-Modified", time.Now().UTC().Format(http.TimeFormat))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
+}
+
+func addInlineScriptHashes(headers http.Header, document []byte) {
+	policy := headers.Get("Content-Security-Policy")
+	if policy == "" {
+		return
+	}
+	var hashes []string
+	for _, match := range inlineScript.FindAllSubmatch(document, -1) {
+		if strings.Contains(strings.ToLower(string(match[1])), "src=") {
+			continue
+		}
+		digest := sha256.Sum256(match[2])
+		hashes = append(hashes, "'sha256-"+base64.StdEncoding.EncodeToString(digest[:])+"'")
+	}
+	if len(hashes) == 0 {
+		return
+	}
+	directives := strings.Split(policy, ";")
+	for i, directive := range directives {
+		if strings.HasPrefix(strings.TrimSpace(directive), "script-src ") {
+			directives[i] = directive + " " + strings.Join(hashes, " ")
+			headers.Set("Content-Security-Policy", strings.Join(directives, ";"))
+			return
+		}
+	}
 }
 
 func problem(w http.ResponseWriter, status int, detail string) {

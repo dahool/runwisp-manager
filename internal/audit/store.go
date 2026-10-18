@@ -56,7 +56,7 @@ type Filter struct {
 }
 
 func (s *Store) List(ctx context.Context, filter Filter) ([]Event, error) {
-	if filter.Limit <= 0 || filter.Limit > 500 {
+	if filter.Limit <= 0 || filter.Limit > 10000 {
 		filter.Limit = 100
 	}
 	query := `SELECT id,ts,request_id,subject,actor_username,actor_email,role,ip,user_agent,action,target_kind,target_name,target_file,outcome,details_json,cfg_before,cfg_after,git_sha,prev_hash,hash FROM audit_events WHERE 1=1`

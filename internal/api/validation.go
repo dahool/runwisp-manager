@@ -2,6 +2,8 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"os"
 
@@ -29,8 +31,10 @@ func (a *ValidationAPI) schema(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, a.Document)
 }
 func (a *ValidationAPI) validate(w http.ResponseWriter, r *http.Request) {
-	if a.Options.Mode == "" {
-		a.Options.Mode = r.URL.Query().Get("mode")
+	// Copy opts so concurrent requests cannot race on the shared Options.Mode field.
+	opts := a.Options
+	if opts.Mode == "" {
+		opts.Mode = r.URL.Query().Get("mode")
 	}
 	var request struct {
 		Files []struct {
@@ -39,7 +43,7 @@ func (a *ValidationAPI) validate(w http.ResponseWriter, r *http.Request) {
 			Content string `json:"content"`
 		} `json:"files"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<20)).Decode(&request); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<20)).Decode(&request); err != nil && !errors.Is(err, io.EOF) {
 		problem(w, http.StatusBadRequest, "invalid validation request")
 		return
 	}
@@ -71,7 +75,7 @@ func (a *ValidationAPI) validate(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	result, err := validate.Validate(r.Context(), a.Options, candidates)
+	result, err := validate.Validate(r.Context(), opts, candidates)
 	if err != nil {
 		problem(w, http.StatusInternalServerError, "validation failed")
 		return
@@ -79,8 +83,9 @@ func (a *ValidationAPI) validate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 func (a *ValidationAPI) current(w http.ResponseWriter, r *http.Request) {
-	r.URL.RawQuery = ""
-	a.Options.Mode = "full"
+	// Invoke validate with mode forced to "full" without mutating shared state.
+	// Override the query string so that validate's local opts copy picks up "full".
+	r.URL.RawQuery = "mode=full"
 	a.validate(w, r)
 }
 

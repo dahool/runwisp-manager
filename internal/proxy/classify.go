@@ -81,5 +81,5 @@ func isOperate(method, clean string) bool {
 }
 
 func isSPAPath(clean string) bool {
-	return clean == "/" || clean == "/notifications" || clean == "/favicon.ico" || strings.HasPrefix(clean, "/tasks/") || strings.HasPrefix(clean, "/runs/") || strings.HasPrefix(clean, "/_app/") || strings.HasPrefix(clean, "/assets/")
+	return clean == "/" || clean == "/notifications" || clean == "/tasks" || clean == "/runs" || clean == "/favicon.ico" || strings.HasPrefix(clean, "/tasks/") || strings.HasPrefix(clean, "/runs/") || strings.HasPrefix(clean, "/_app/") || strings.HasPrefix(clean, "/assets/")
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/runwisp/runwisp-manager/internal/audit"
@@ -26,7 +27,7 @@ func (a *AuditAPI) Routes() http.Handler {
 }
 func (a *AuditAPI) list(w http.ResponseWriter, r *http.Request) {
 	if a.Store == nil {
-		problem(w, 503, "audit unavailable")
+		problem(w, http.StatusServiceUnavailable, "audit unavailable")
 		return
 	}
 	identity, _ := a.Auth.IdentityFromRequest(r)
@@ -39,29 +40,53 @@ func (a *AuditAPI) list(w http.ResponseWriter, r *http.Request) {
 	}
 	events, err := a.Store.List(r.Context(), filter)
 	if err != nil {
-		problem(w, 500, "audit query failed")
+		problem(w, http.StatusInternalServerError, "audit query failed")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"events": events})
+	writeJSON(w, http.StatusOK, map[string]any{"events": events})
 }
 func (a *AuditAPI) verify(w http.ResponseWriter, r *http.Request) {
 	if a.Store == nil {
-		problem(w, 503, "audit unavailable")
+		problem(w, http.StatusServiceUnavailable, "audit unavailable")
 		return
 	}
 	id, err := a.Store.Verify(r.Context())
-	writeJSON(w, 200, map[string]any{"valid": err == nil, "firstBrokenID": id, "error": errorText(err)})
+	writeJSON(w, http.StatusOK, map[string]any{"valid": err == nil, "firstBrokenID": id, "error": errorText(err)})
 }
 func (a *AuditAPI) export(w http.ResponseWriter, r *http.Request) {
 	identity, _ := a.Auth.IdentityFromRequest(r)
 	if identity.Role != "admin" {
-		problem(w, 403, "audit export requires admin")
+		problem(w, http.StatusForbidden, "audit export requires admin")
 		return
 	}
-	events, err := a.Store.List(r.Context(), audit.Filter{Limit: 500})
+	limit := 500
+	if parsed, parseErr := strconv.Atoi(r.URL.Query().Get("limit")); parseErr == nil && parsed > 0 {
+		limit = parsed
+	}
+	filter := audit.Filter{Limit: limit}
+	if value := r.URL.Query().Get("from"); value != "" {
+		if t, parseErr := time.Parse(time.RFC3339, value); parseErr == nil {
+			filter.From = t
+		} else {
+			problem(w, http.StatusBadRequest, "invalid from timestamp")
+			return
+		}
+	}
+	if value := r.URL.Query().Get("to"); value != "" {
+		if t, parseErr := time.Parse(time.RFC3339, value); parseErr == nil {
+			filter.To = t
+		} else {
+			problem(w, http.StatusBadRequest, "invalid to timestamp")
+			return
+		}
+	}
+	events, err := a.Store.List(r.Context(), filter)
 	if err != nil {
-		problem(w, 500, "audit export failed")
+		problem(w, http.StatusInternalServerError, "audit export failed")
 		return
+	}
+	if len(events) >= limit {
+		w.Header().Set("X-Truncated", "true")
 	}
 	a.Store.Emit(r.Context(), audit.Event{Action: "admin.export", Username: identity.Username, Role: identity.Role, Success: true})
 	if r.URL.Query().Get("format") == "csv" {
@@ -101,28 +126,28 @@ func (a *SessionsAPI) Routes() http.Handler {
 }
 func (a *SessionsAPI) list(w http.ResponseWriter, r *http.Request) {
 	if a.Store == nil {
-		problem(w, 503, "sessions unavailable")
+		problem(w, http.StatusServiceUnavailable, "sessions unavailable")
 		return
 	}
 	v, err := a.Store.ListSessions(r.Context())
 	if err != nil {
-		problem(w, 500, "sessions unavailable")
+		problem(w, http.StatusInternalServerError, "sessions unavailable")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"sessions": v})
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": v})
 }
 func (a *SessionsAPI) revoke(w http.ResponseWriter, r *http.Request) {
 	if a.Store == nil {
-		problem(w, 503, "sessions unavailable")
+		problem(w, http.StatusServiceUnavailable, "sessions unavailable")
 		return
 	}
 	if err := a.Store.RevokeSessionHash(r.Context(), chi.URLParam(r, "id")); err != nil {
-		problem(w, 500, "session revoke failed")
+		problem(w, http.StatusInternalServerError, "session revoke failed")
 		return
 	}
 	identity, _ := a.Auth.IdentityFromRequest(r)
 	if a.Audit != nil {
 		a.Audit.Emit(r.Context(), audit.Event{Action: "session.revoke", Username: identity.Username, Role: identity.Role, Success: true, Reason: "session " + chi.URLParam(r, "id")})
 	}
-	writeJSON(w, 200, map[string]bool{"revoked": true})
+	writeJSON(w, http.StatusOK, map[string]bool{"revoked": true})
 }

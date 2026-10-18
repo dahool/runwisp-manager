@@ -45,12 +45,22 @@ func NewRouterWithAuth(version, commit string, logger *slog.Logger, discovery *d
 }
 
 func NewRouterWithAuthAudit(version, commit string, logger *slog.Logger, discovery *daemon.Discovery, networks []*net.IPNet, authentication *auth.Authenticator, emitter audit.Emitter) http.Handler {
+	return newRouterWithContext(context.Background(), version, commit, logger, discovery, networks, authentication, emitter)
+}
+
+func newRouterWithContext(ctx context.Context, version, commit string, logger *slog.Logger, discovery *daemon.Discovery, networks []*net.IPNet, authentication *auth.Authenticator, emitter audit.Emitter) http.Handler {
 	r := chi.NewRouter()
-	r.Use(RequestID, SecurityHeaders, Recoverer, AccessLog(logger))
+	r.Use(RequestID, SecurityHeaders, RecovererWithLogger(logger), AccessLog(logger))
 	if networks != nil {
 		r.Use(RealIP(networks))
 	}
 	r.Get("/manager/healthz", health(version, commit))
+	// Browsers request the origin-root favicon before applying the manager's
+	// /manager base path. Keep that request public so it does not hit the daemon
+	// proxy's authentication middleware.
+	r.Get("/favicon.ico", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
 	status := http.Handler(http.HandlerFunc(statusHandler(discovery)))
 	if authentication != nil {
 		status = authentication.RequireRole("viewer")(status)
@@ -61,7 +71,7 @@ func NewRouterWithAuthAudit(version, commit string, logger *slog.Logger, discove
 		if discovery != nil && discovery.Capabilities.ConfigPath != "" {
 			watcher, err := cfgtree.NewWatcher(cfgtree.Options{Root: discovery.Capabilities.ConfigPath, ReadOnly: !discovery.Capabilities.CanEdit, ReadOnlyReason: discovery.Capabilities.ReadOnlyReason}, os.Getenv("RWM_FS_POLL") == "true")
 			if err == nil {
-				watcher.Start(context.Background())
+				watcher.Start(ctx)
 				var auditStore *audit.Store
 				if store, ok := emitter.(*audit.Store); ok {
 					auditStore = store
@@ -104,7 +114,7 @@ func NewRouterWithAuthAudit(version, commit string, logger *slog.Logger, discove
 							}
 							gitSync := gitx.NewSync(gitRunner, discovery.Config.GitRemote)
 							if pollInterval, pollErr := time.ParseDuration(discovery.Config.GitPollInterval); pollErr == nil {
-								gitSync.Start(context.Background(), pollInterval)
+								gitSync.Start(ctx, pollInterval)
 							}
 							gitAPI := &api.GitAPI{Git: gitRunner, Repo: gitRepo, Watcher: watcher, Auth: authentication, Audit: emitter, Sync: gitSync, Remote: discovery.Config.GitRemote, PullAllow: strings.Split(discovery.Config.GitPullAllowStrategies, ","), PushBranches: strings.Split(discovery.Config.GitPushBranches, ","), AutoApplyPull: discovery.Config.GitAutoApplyPull, Options: gitx.CommitOptions{CommitterName: discovery.Config.GitAuthorName, CommitterEmail: discovery.Config.GitAuthorEmail, AuthorDomain: discovery.Config.GitAuthorDomain, ExpectedBranch: discovery.Config.GitBranch, SecretGuard: discovery.Config.GitSecretGuard, DenyGlobs: strings.Split(discovery.Config.GitDenyGlobs, ",")}}
 							apiRoot.Mount("/git", gitAPI.Routes())
@@ -148,10 +158,22 @@ func NewRouterWithAuthAudit(version, commit string, logger *slog.Logger, discove
 	}
 	r.Mount("/manager", uiHandler)
 	if authentication != nil && discovery != nil {
+		runWispProxy := proxy.NewWithAudit(discovery.Client, authentication, discovery.Config, logger, emitter)
 		if discovery.Config.Landing == "manager" {
-			r.Get("/", func(w http.ResponseWriter, req *http.Request) { http.Redirect(w, req, "/manager/", http.StatusFound) })
+			r.Get("/", func(w http.ResponseWriter, req *http.Request) {
+				if cookie, err := req.Cookie("runwisp-dashboard"); err == nil && cookie.Value == "1" {
+					http.SetCookie(w, &http.Cookie{Name: "runwisp-dashboard", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+					runWispProxy.ServeHTTP(w, req)
+					return
+				}
+				http.Redirect(w, req, "/manager/", http.StatusFound)
+			})
 		}
-		r.Handle("/*", proxy.NewWithAudit(discovery.Client, authentication, discovery.Config, logger, emitter))
+		r.Get("/runwisp/", func(w http.ResponseWriter, req *http.Request) {
+			http.SetCookie(w, &http.Cookie{Name: "runwisp-dashboard", Value: "1", Path: "/", MaxAge: 30, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+			http.Redirect(w, req, "/", http.StatusFound)
+		})
+		r.Handle("/*", runWispProxy)
 	}
 	return r
 }
@@ -174,7 +196,9 @@ func ServeWithAuth(address, version, commit string, logger *slog.Logger, discove
 
 func ServeWithAuthAudit(address, version, commit string, logger *slog.Logger, discovery *daemon.Discovery, networks []*net.IPNet, authentication *auth.Authenticator, emitter audit.Emitter) error {
 	logger.Info("starting manager", "address", address, "version", version, "commit", commit)
-	return http.ListenAndServe(address, NewRouterWithAuthAudit(version, commit, logger, discovery, networks, authentication, emitter))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	return http.ListenAndServe(address, newRouterWithContext(ctx, version, commit, logger, discovery, networks, authentication, emitter))
 }
 
 func health(version, commit string) http.HandlerFunc {
@@ -186,13 +210,27 @@ func health(version, commit string) http.HandlerFunc {
 
 func RequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id := r.Header.Get("X-Request-ID")
-		if id == "" {
-			id = newRequestID()
+		id := newRequestID()
+		if incoming := r.Header.Get("X-Request-ID"); isValidRequestID(incoming) {
+			id = incoming
 		}
 		w.Header().Set("X-Request-ID", id)
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestIDKey{}, id)))
 	})
+}
+
+// isValidRequestID accepts only non-empty printable ASCII strings up to 64
+// characters, rejecting control characters that could poison structured logs.
+func isValidRequestID(id string) bool {
+	if id == "" || len(id) > 64 {
+		return false
+	}
+	for _, c := range id {
+		if c < 0x20 || c > 0x7E {
+			return false
+		}
+	}
+	return true
 }
 
 func SecurityHeaders(next http.Handler) http.Handler {
@@ -201,7 +239,7 @@ func SecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-		w.Header().Set("Content-Security-Policy", "img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+		w.Header().Set("Content-Security-Policy", "script-src 'self' 'sha256-u+0YkgKQ3C1+KoDTtCu/acUtW1GusLyjp4ONAem7uNQ=' 'sha256-K4xga4pHS5vnuf92hDArw6/OGxAXoLjq+i8si4lKFLc='; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
 		if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
 			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
@@ -212,12 +250,29 @@ func SecurityHeaders(next http.Handler) http.Handler {
 func Recoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
-			if recover() != nil {
+			if v := recover(); v != nil {
 				problem(w, http.StatusInternalServerError, "internal server error")
 			}
 		}()
 		next.ServeHTTP(w, r)
 	})
+}
+
+// RecovererWithLogger is like Recoverer but logs the panic value.
+func RecovererWithLogger(logger *slog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer func() {
+				if v := recover(); v != nil {
+					if logger != nil {
+						logger.Error("panic recovered", "panic", v, "path", r.URL.Path, "method", r.Method)
+					}
+					problem(w, http.StatusInternalServerError, "internal server error")
+				}
+			}()
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 func AccessLog(logger *slog.Logger) func(http.Handler) http.Handler {

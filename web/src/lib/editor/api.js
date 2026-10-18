@@ -3,7 +3,7 @@ const json = async (url, options = {}) => {
 	const response = await fetch(url, { headers: { Accept: 'application/json', ...(options.headers ?? {}) }, ...options });
 	let body = null;
 	try { body = await response.json(); } catch { /* non-JSON response */ }
-	if (!response.ok) { const error = new Error(body?.message ?? body?.error ?? `Request failed (${response.status})`); error.status = response.status; error.body = body; throw error; }
+	if (!response.ok) { const error = new Error(body?.detail ?? body?.message ?? body?.error ?? body?.title ?? `Request failed (${response.status})`); error.status = response.status; error.body = body; throw error; }
 	return body;
 };
 export const editorApi = {

@@ -1,6 +1,5 @@
 <script>
 	// @ts-nocheck
-	import { onMount } from 'svelte';
 	import SchemaForm from '$lib/editor/SchemaForm.svelte';
 	import { editorApi } from '$lib/editor/api.js';
 	import { diffOps, toSaveOps } from '$lib/editor/ops.js';
@@ -24,6 +23,7 @@
 	}
 	function label(value) { return value.replace(/([A-Z])/g, ' $1').replace(/^./, (letter) => letter.toUpperCase()); }
 	async function load() {
+		loading = true; error = ''; notice = ''; unit = null; form = {}; original = {};
 		try {
 			const [me, treeResult, schemaResult] = await Promise.all([fetch('/manager/api/me').then((r) => r.ok ? r.json() : null).catch(() => null), fetch('/manager/api/config/tree').then((r) => r.json()), editorApi.schema().catch(() => null)]);
 			identity = me?.identity ?? me; tree = treeResult; schema = schemaResult;
@@ -59,7 +59,7 @@
 	}
 	async function previewMatches() { const result = await editorApi.routeMatches(matchPattern).catch((cause) => ({ matches: [], error: cause.message })); matchedTasks = result.matches ?? []; if (result.error) error = result.error; }
 	async function createInclude() { try { await editorApi.createFile({ path: newFilePath, template: 'empty' }); notice = 'Include file created. Add its glob under daemon settings.'; await load(); } catch (cause) { error = cause.message ?? 'Could not create include file'; } }
-	onMount(load);
+	$effect(() => { section; name; load(); });
 </script>
 
 {#if loading}<section class="state">Reading the configuration ledger…</section>

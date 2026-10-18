@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"strings"
 
@@ -31,7 +30,7 @@ func (a *ConfigAPI) changesPreview(w http.ResponseWriter, r *http.Request) {
 	if !a.requireEditor(w, r) {
 		return
 	}
-	change, err := decodeChange(r)
+	change, err := decodeChange(w, r)
 	if err != nil {
 		problem(w, http.StatusBadRequest, err.Error())
 		return
@@ -52,7 +51,7 @@ func (a *ConfigAPI) changes(w http.ResponseWriter, r *http.Request) {
 	if !a.requireEditor(w, r) {
 		return
 	}
-	change, err := decodeChange(r)
+	change, err := decodeChange(w, r)
 	if err != nil {
 		problem(w, http.StatusBadRequest, err.Error())
 		return
@@ -102,8 +101,13 @@ func (a *ConfigAPI) backups(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusServiceUnavailable, "save pipeline unavailable")
 		return
 	}
-	backups, err := a.Save.Backups(r.URL.Query().Get("file"))
+	file := r.URL.Query().Get("file")
+	backups, err := a.Save.Backups(file)
 	if err != nil {
+		if errors.Is(err, cfgsave.ErrManagedPath) {
+			problem(w, http.StatusBadRequest, "file is not managed")
+			return
+		}
 		problem(w, http.StatusInternalServerError, "list backups failed")
 		return
 	}
@@ -119,9 +123,9 @@ func (a *ConfigAPI) requireEditor(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-func decodeChange(r *http.Request) (cfgsave.Change, error) {
+func decodeChange(w http.ResponseWriter, r *http.Request) (cfgsave.Change, error) {
 	var request changeRequest
-	if err := json.NewDecoder(io.LimitReader(r.Body, 8<<20)).Decode(&request); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&request); err != nil {
 		return cfgsave.Change{}, errors.New("invalid change request")
 	}
 	change := cfgsave.Change{IdempotencyKey: request.IdempotencyKey, Base: request.Base, Apply: request.Apply, Reason: request.Reason}
@@ -156,7 +160,6 @@ func decodeOp(raw json.RawMessage) (tomledit.Op, error) {
 			Path  []string `json:"path"`
 			Value any      `json:"value"`
 		}
-		op = tomledit.SetValue{Path: v.Path, Value: v.Value}
 		if err := json.Unmarshal(raw, &v); err != nil {
 			return nil, errors.New("invalid setValue operation")
 		}

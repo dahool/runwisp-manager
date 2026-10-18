@@ -68,9 +68,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.status(w, r, identity)
 		return
 	}
-	if r.Body != nil && r.ContentLength > maxRequestBody {
-		problem(w, http.StatusRequestEntityTooLarge, "request body too large")
-		return
+	if r.Body != nil {
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	}
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
@@ -97,9 +96,6 @@ func (h *Handler) reverseProxy() *httputil.ReverseProxy {
 			r.Header.Set("X-Forwarded-Proto", requestProto(r))
 			r.Header.Set("X-Forwarded-Host", r.Host)
 			r.Header.Set("X-Accel-Buffering", "no")
-			if r.Body != nil && r.ContentLength < 0 {
-				r.Body = io.NopCloser(io.LimitReader(r.Body, maxRequestBody+1))
-			}
 		},
 		Transport:     h.client.RoundTripper(),
 		FlushInterval: -1,

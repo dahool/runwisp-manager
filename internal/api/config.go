@@ -209,10 +209,6 @@ func (a *ConfigAPI) createFile(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusBadRequest, "file must be a managed relative .toml path")
 		return
 	}
-	if _, err := os.Stat(path); err == nil {
-		problem(w, http.StatusConflict, "file already exists")
-		return
-	}
 	content := "# Managed include file. Add RunWisp units below.\n"
 	if request.Template == "task" {
 		content += "\n[task.example]\n# schedule = \"0 * * * *\"\n"
@@ -221,9 +217,37 @@ func (a *ConfigAPI) createFile(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusInternalServerError, "create include directory failed")
 		return
 	}
-	if err := os.WriteFile(path, []byte(content), 0o640); err != nil {
-		problem(w, http.StatusInternalServerError, "create include file failed")
+	create := func() error {
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o640)
+		if err != nil {
+			return err
+		}
+		if _, err := f.Write([]byte(content)); err != nil {
+			_ = f.Close()
+			_ = os.Remove(path)
+			return err
+		}
+		return f.Close()
+	}
+	if a.Save != nil {
+		if err := a.Save.WithSync(r.Context(), create); err != nil {
+			if os.IsExist(err) {
+				problem(w, http.StatusConflict, "file already exists")
+			} else {
+				problem(w, http.StatusInternalServerError, "create include file failed")
+			}
+			return
+		}
+	} else if err := create(); err != nil {
+		if os.IsExist(err) {
+			problem(w, http.StatusConflict, "file already exists")
+		} else {
+			problem(w, http.StatusInternalServerError, "create include file failed")
+		}
 		return
+	}
+	if a.Audit != nil {
+		a.Audit.Emit(r.Context(), audit.Event{Action: "config.file.create", Subject: identity.Sub, Username: identity.Username, Email: identity.Email, Role: identity.Role, TargetFile: path, Outcome: "ok", Success: true})
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"path": path, "message": "File created. Add its relative glob to daemon includes before saving."})
 }
@@ -580,13 +604,14 @@ func (a *ConfigAPI) events(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 	writeEvent(cfgtree.Event{TreeVersion: a.Watcher.Tree().TreeVersion, Stale: false})
+	events := a.Watcher.Subscribe(r.Context())
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-r.Context().Done():
 			return
-		case event, ok := <-a.Watcher.Events():
+		case event, ok := <-events:
 			if !ok {
 				return
 			}
@@ -606,8 +631,8 @@ func (a *ConfigAPI) allowReveal() bool {
 	defer a.mu.Unlock()
 	now := time.Now()
 	cutoff := now.Add(-time.Minute)
-	kept := a.reveals[:0]
-	for _, when := range a.reveals {
+	var kept []time.Time
+	for _, when := range a.reveals { // range over the original slice, not a resliced copy
 		if when.After(cutoff) {
 			kept = append(kept, when)
 		}

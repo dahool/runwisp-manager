@@ -48,6 +48,9 @@ func Author(actor Actor, domain string) (string, error) {
 	if name == "" {
 		return "", errors.New("git author name is required")
 	}
+	if strings.ContainsAny(name, "<>\r\n\x00") {
+		return "", errors.New("git author name is invalid")
+	}
 	email := strings.TrimSpace(actor.Email)
 	if email == "" {
 		domain = strings.TrimSpace(domain)

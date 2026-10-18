@@ -1,6 +1,5 @@
 <script>
 	// @ts-nocheck
-	import { onMount } from 'svelte';
 	import TaskEditor from '$lib/editor/TaskEditor.svelte';
 	import SettingsPage from '$lib/settings/SettingsPage.svelte';
 	let { data } = $props();
@@ -27,7 +26,8 @@
 		commitResult = response.ok ? `Committed ${(await response.json()).sha}` : ((await response.json()).detail || 'Commit failed');
 		if (response.ok) await loadGit();
 	}
-	onMount(async () => {
+	async function loadPage() {
+		tree = null; units = []; detail = null; error = ''; loading = true; gitStatus = null; gitDiffs = {};
 		if (editMode) { loading = false; return; }
 		try {
 			const treeResponse = await fetch('/manager/api/config/tree'); if (treeResponse.ok) tree = await treeResponse.json();
@@ -35,7 +35,8 @@
 			if (isDetail) { const response = await fetch(`/manager/api/units/${kind}/${encodeURIComponent(parts[1])}`); if (response.ok) detail = await response.json(); else error = 'Unit not found'; }
 			else if (kind) { const response = await fetch(`/manager/api/units?kind=${kind}`); if (response.ok) units = (await response.json()).units ?? []; }
 		} catch { error = 'Configuration tree is unavailable'; } loading = false;
-	});
+	}
+	$effect(() => { path; loadPage(); });
 </script>
 
 {#if editMode}<TaskEditor {kind} name={editName} isNew={parts[1] === 'new'} />
